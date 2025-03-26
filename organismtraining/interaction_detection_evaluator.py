@@ -1,6 +1,8 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
+from organismtraining.interaction_detection_model import PubmedProteinInteractionTrainer
+import argparse
 
 
 class PubmedProteinInteractionEvaluator:
@@ -18,4 +20,25 @@ class PubmedProteinInteractionEvaluator:
         plt.ylabel('True Positive Rate')
         plt.title('Receiver Operating Characteristic')
         plt.legend(loc='lower right')
-        plt.show()
+        plt.savefig('roc_curve.png')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train and evaluate protein interaction detection model')
+    parser.add_argument('--dataset_path', type=str, required=True,
+                      help='Path to the dataset directory containing train.tsv, dev.tsv, and test.tsv files')
+    parser.add_argument('--model_path', type=str, required=True,
+                      help='Path to the model directory containing pretrained_dir')
+    parser.add_argument('--retrain', action='store_true',
+                      help='Whether to retrain the model from scratch')
+
+    args = parser.parse_args()
+
+    pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path)
+
+    if args.retrain:
+        pubmed_trainer.train()
+
+    predicted_labels, true_labels = pubmed_trainer.predict()
+
+    evaluator = PubmedProteinInteractionEvaluator()
+    evaluator.evaluate(predicted_labels, true_labels)
