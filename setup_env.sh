@@ -1,8 +1,14 @@
 #!/bin/bash
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Add the project root directory to PYTHONPATH
-export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+# Get the absolute path of the parent directory
+PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Add the project root to PYTHONPATH
+export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
+
+# Print confirmation
+echo "Added $PROJECT_ROOT to PYTHONPATH"
+echo "Current PYTHONPATH: $PYTHONPATH"
 
 # Check if conda environment exists
 if ! conda env list | grep -q "^organismtraining "; then

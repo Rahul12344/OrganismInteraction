@@ -1,7 +1,7 @@
 import os
 import logging
 import pandas as pd
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification, BertConfig
 from datasets.dataset_dict import DatasetDict
 from datasets import Dataset
 import evaluate
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _METRIC = evaluate.load("f1")
-_PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
+_PRETRAIN_DIR = "bluebert_pretrained_model"
 _MAX_LENGTH = 512
 _SEED = 42
 
@@ -42,17 +42,36 @@ def _sigmoid(x):
 
 class CustomBertForSequenceClassification(BertForSequenceClassification):
     def __init__(self, config):
-        super().__init__(config)
+        # Initialize with parent class but don't create the classifier yet
+        super(BertForSequenceClassification, self).__init__(config)
+
+        # Get the BERT model
+        self.bert = self.bert
+
         # Add dropout after BERT
         self.dropout = nn.Dropout(0.3)
+
         # Add intermediate layer
         self.intermediate = nn.Linear(config.hidden_size, 256)
         self.activation = nn.ReLU()
+
         # Add final classification layer
         self.classifier = nn.Linear(256, config.num_labels)
 
+        # Initialize weights for new layers
+        self._init_weights(self.intermediate)
+        self._init_weights(self.classifier)
+
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=0.02)
+            if module.bias is not None:
+                module.bias.data.zero_()
+
     def forward(self, input_ids=None, attention_mask=None, token_type_ids=None,
                 position_ids=None, head_mask=None, inputs_embeds=None, labels=None):
+        # Get BERT outputs
         outputs = self.bert(input_ids,
                           attention_mask=attention_mask,
                           token_type_ids=token_type_ids,
@@ -60,27 +79,54 @@ class CustomBertForSequenceClassification(BertForSequenceClassification):
                           head_mask=head_mask,
                           inputs_embeds=inputs_embeds)
 
+        # Get pooled output
         pooled_output = outputs[1]
+
+        # Apply dropout
         pooled_output = self.dropout(pooled_output)
+
+        # Pass through intermediate layer
         intermediate_output = self.intermediate(pooled_output)
         intermediate_output = self.activation(intermediate_output)
+
+        # Get logits
         logits = self.classifier(intermediate_output)
 
         outputs = (logits,) + outputs[2:]
 
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 2.0]).to(logits.device))  # Class weights
+            # Calculate class weights based on label distribution
+            if hasattr(self, 'class_weights'):
+                weight = self.class_weights
+            else:
+                weight = torch.tensor([1.0, 2.0]).to(logits.device)
+
+            loss_fct = nn.CrossEntropyLoss(weight=weight)
             loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs
 
+    def set_class_weights(self, class_weights):
+        """Set class weights for loss calculation"""
+        self.class_weights = torch.tensor(class_weights).float()
+
 class PubmedProteinInteractionTrainer:
     def __init__(self, dataset_path: str, model_path: str):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
+        logger.info(f"Initializing trainer with model from {model_path}")
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
         self._pretrained_model = self._load_model_from_checkpoint(model_path)
+
+        # Calculate and set class weights
+        train_labels = self._tokenized_dataset["train"]["label"]
+        label_counts = np.bincount(train_labels)
+        total_samples = len(train_labels)
+        class_weights = [total_samples / (len(label_counts) * count) for count in label_counts]
+        logger.info(f"Using class weights: {class_weights}")
+        self._pretrained_model.set_class_weights(class_weights)
+
         self._trainer = self._build_trainer()
 
     def train(self):
@@ -152,9 +198,17 @@ class PubmedProteinInteractionTrainer:
         return trainer
 
     def _load_model_from_checkpoint(self, model_path: str) -> BertForSequenceClassification:
-        model = BertForSequenceClassification.from_pretrained(
+        config = BertConfig.from_pretrained(
             os.path.join(model_path, _PRETRAIN_DIR),
-            num_labels=2
+            num_labels=2,
+            hidden_dropout_prob=0.3,
+            attention_probs_dropout_prob=0.3
+        )
+
+        model = CustomBertForSequenceClassification.from_pretrained(
+            os.path.join(model_path, _PRETRAIN_DIR),
+            config=config,
+            ignore_mismatched_sizes=True  # Add this to handle the custom architecture
         )
         return model
 
@@ -169,15 +223,12 @@ class PubmedProteinInteractionTrainer:
             virus_test = self._to_dataset(
                 pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
             )
-<<<<<<< HEAD
-=======
 
             # Log dataset statistics
             logger.info(f"Train set size: {len(virus_train)}")
             logger.info(f"Dev set size: {len(virus_dev)}")
             logger.info(f"Test set size: {len(virus_test)}")
 
->>>>>>> ab755a5fad5583bd844c1024d8b8a1bc78bc642c
             dataset = self._build_dataset_dict(
                 [
                     ("train", virus_train),
