@@ -21,19 +21,3 @@ else
     echo "Conda environment 'organismtraining' already exists."
     conda activate organismtraining
 fi
-
-# Optional: Create a virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
-fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install required packages
-echo "Installing required packages..."
-pip install -r requirements.txt
-
-echo "Setup complete! You can now run the model with:"
-echo "python -m organismtraining.interaction_detection_evaluator_dropout --dataset_path <path> --model_path <path> --retrain"

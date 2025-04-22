@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _METRIC = evaluate.load("f1")
-_PRETRAIN_DIR = "bluebert_pretrained_model"
+_PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
 _MAX_LENGTH = 512
 _SEED = 42
 
@@ -78,7 +78,6 @@ class CustomBertForSequenceClassification(BertForSequenceClassification):
 class PubmedProteinInteractionTrainer:
     def __init__(self, dataset_path: str, model_path: str):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
-        logger.info(f"Initializing trainer with model from {model_path}")
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
         self._pretrained_model = self._load_model_from_checkpoint(model_path)
@@ -153,7 +152,7 @@ class PubmedProteinInteractionTrainer:
         return trainer
 
     def _load_model_from_checkpoint(self, model_path: str) -> BertForSequenceClassification:
-        model = CustomBertForSequenceClassification.from_pretrained(
+        model = BertForSequenceClassification.from_pretrained(
             os.path.join(model_path, _PRETRAIN_DIR),
             num_labels=2
         )
@@ -170,12 +169,15 @@ class PubmedProteinInteractionTrainer:
             virus_test = self._to_dataset(
                 pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
             )
+<<<<<<< HEAD
+=======
 
             # Log dataset statistics
             logger.info(f"Train set size: {len(virus_train)}")
             logger.info(f"Dev set size: {len(virus_dev)}")
             logger.info(f"Test set size: {len(virus_test)}")
 
+>>>>>>> ab755a5fad5583bd844c1024d8b8a1bc78bc642c
             dataset = self._build_dataset_dict(
                 [
                     ("train", virus_train),
