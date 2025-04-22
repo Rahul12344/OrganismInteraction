@@ -10,6 +10,7 @@ from transformers import TrainingArguments, Trainer, get_linear_schedule_with_wa
 from torch.optim import Adam
 from torch import nn
 import torch
+from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -112,12 +113,13 @@ class CustomBertForSequenceClassification(BertForSequenceClassification):
         self.class_weights = torch.tensor(class_weights).float()
 
 class PubmedProteinInteractionTrainer:
-    def __init__(self, dataset_path: str, model_path: str):
+    def __init__(self, dataset_path: str, model_path: str, tune_hyperparams: bool = False):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
         logger.info(f"Initializing trainer with model from {model_path}")
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
         self._pretrained_model = self._load_model_from_checkpoint(model_path)
+        self._tune_hyperparams = tune_hyperparams
 
         # Calculate and set class weights
         train_labels = self._tokenized_dataset["train"]["label"]
@@ -127,7 +129,81 @@ class PubmedProteinInteractionTrainer:
         logger.info(f"Using class weights: {class_weights}")
         self._pretrained_model.set_class_weights(class_weights)
 
-        self._trainer = self._build_trainer()
+        if tune_hyperparams:
+            self._tune_hyperparameters()
+        else:
+            self._trainer = self._build_trainer()
+
+    def _tune_hyperparameters(self):
+        """Tune hyperparameters using k-fold cross validation."""
+        from .hyperparameter_tuning import HyperparameterTuner
+
+        # Combine train and dev sets for cross-validation
+        full_train_dataset = self._tokenized_dataset["train"].concatenate(self._tokenized_dataset["dev"])
+
+        # Initialize tuner
+        tuner = HyperparameterTuner(
+            model_class=CustomBertForSequenceClassification,
+            tokenizer=self._tokenizer,
+            dataset=full_train_dataset,
+            n_splits=5
+        )
+
+        # Run hyperparameter tuning
+        best_params = tuner.tune()
+
+        # Log best parameters
+        logger.info(f"Best hyperparameters found: {best_params}")
+
+        # Create trainer with best parameters
+        self._trainer = self._build_trainer_with_params(best_params)
+
+    def _build_trainer_with_params(self, params: Dict[str, Any]) -> Trainer:
+        """Build trainer with specific parameters."""
+        num_training_steps = len(self._tokenized_dataset["train"]) * params['num_epochs']
+        num_warmup_steps = num_training_steps // 10
+
+        training_args = TrainingArguments(
+            output_dir="test_trainer",
+            evaluation_strategy="epoch",
+            per_device_train_batch_size=params['batch_size'],
+            per_device_eval_batch_size=params['batch_size'],
+            num_train_epochs=params['num_epochs'],
+            learning_rate=params['learning_rate'],
+            weight_decay=params['weight_decay'],
+            warmup_steps=num_warmup_steps,
+            gradient_accumulation_steps=4,
+            fp16=True,
+            logging_steps=100,
+            save_strategy="epoch",
+            load_best_model_at_end=True,
+            metric_for_best_model="auc"
+        )
+
+        optimizer = Adam(
+            params=self._pretrained_model.parameters(),
+            lr=params['learning_rate'],
+            eps=1e-08,
+            weight_decay=params['weight_decay']
+        )
+
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
+
+        # Set dropout rate
+        self._pretrained_model.dropout.p = params['dropout_rate']
+
+        return Trainer(
+            model=self._pretrained_model,
+            args=training_args,
+            train_dataset=self._tokenized_dataset["train"].shuffle(seed=_SEED),
+            eval_dataset=self._tokenized_dataset["dev"].shuffle(seed=_SEED),
+            compute_metrics=_compute_metrics,
+            optimizers=(optimizer, scheduler),
+        )
 
     def train(self):
         """Trains model using train/eval data"""
