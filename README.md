@@ -11,7 +11,7 @@ To set up local environment, run
 ```
 which will create a virtual environment called `organismtraining`.
 
-In the root directory of the project, download the BlueBERT model from `https://huggingface.co/bionlp/bluebert_pubmed_uncased_L-12_H-768_A-12/tree/main` and set this path to `$MODEL`.
+In the root directory of the project, download the BlueBERT model from [HuggingFace](https://huggingface.co/bionlp/bluebert_pubmed_uncased_L-12_H-768_A-12/tree/main) and set this path to `$MODEL`.
 
 ## Downloading Datasets
 
