@@ -8,9 +8,10 @@ torch>=1.9.0
 transformers>=4.11.0
 datasets>=1.11.0
 evaluate>=0.2.0
-accelerate>=0.26.0
 
 # Visualization
 matplotlib>=3.4.0
 seaborn>=0.11.0
 
+# Note: This project uses PyTorch as its deep learning framework
+# TensorFlow is not required

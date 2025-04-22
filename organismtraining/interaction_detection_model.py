@@ -10,12 +10,12 @@ from transformers import TrainingArguments, Trainer, get_linear_schedule_with_wa
 from torch.optim import Adam
 
 _METRIC = evaluate.load("f1")
-PRETRAIN_DIR = ""
-MAX_LENGTH = 512
+_PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
+_MAX_LENGTH = 512
 _SEED = 42
 
 def _tokenize_function(samples: pd.DataFrame, tokenizer: BertTokenizer):
-    return tokenizer(samples["text"], padding="max_length", truncation=True, max_length=MAX_LENGTH)
+    return tokenizer(samples["text"], padding="max_length", truncation=True, max_length=_MAX_LENGTH)
 
 def _compute_metrics(eval_pred):
     logits, labels = eval_pred
@@ -26,10 +26,11 @@ def _sigmoid(x):
     return 1/(1 + np.exp(-x))
 
 class PubmedProteinInteractionTrainer:
-    def __init__(self, dataset_path: str):
+    def __init__(self, dataset_path: str, model_path: str):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
+        self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
-        self._pretrained_model = self._load_model_from_checkpoint(dataset_path)
+        self._pretrained_model = self._load_model_from_checkpoint(model_path)
         self._trainer = self._build_trainer()
 
     def train(self):
@@ -64,38 +65,46 @@ class PubmedProteinInteractionTrainer:
             model=self._pretrained_model,
             args=training_args,
             train_dataset=self._tokenized_dataset["train"].shuffle(seed=_SEED),
-            eval_dataset=self._tokenized_dataset["val"].shuffle(seed=_SEED),
+            eval_dataset=self._tokenized_dataset["dev"].shuffle(seed=_SEED),
             compute_metrics=_compute_metrics,
             optimizers=(optimizer,scheduler),
         )
         return trainer
 
-    def _load_model_from_checkpoint(self, dataset_path: str) -> BertForSequenceClassification:
+    def _load_model_from_checkpoint(self, model_path: str) -> BertForSequenceClassification:
         model = BertForSequenceClassification.from_pretrained(
-            os.path.join(dataset_path, "pretrained_dir"),
+            os.path.join(model_path, _PRETRAIN_DIR),
             num_labels=2
         )
         return model
 
     def _build_tokenized_dataset(self, dataset_path: str):
-        virus_train = self._to_dataset(
-            pd.read_csv(os.path.join(dataset_path, "train.tsv"), sep='\t')
-        )
-        virus_dev = self._to_dataset(
-            pd.read_csv(os.path.join(dataset_path, "dev.tsv"), sep='\t')
-        )
-        virus_test = self._to_dataset(
-            pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
-        )
-        dataset = self._build_dataset_dict(
-            [
-                ("train", virus_train),
-                ("dev", virus_dev),
-                ("test", virus_test)
-            ]
-        )
-        tokenized_dataset = dataset.map(_tokenize_function, batched=True)
-        return tokenized_dataset
+        try:
+            virus_train = self._to_dataset(
+                pd.read_csv(os.path.join(dataset_path, "train.tsv"), sep='\t')
+            )
+            virus_dev = self._to_dataset(
+                pd.read_csv(os.path.join(dataset_path, "dev.tsv"), sep='\t')
+            )
+            virus_test = self._to_dataset(
+                pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
+            )
+            dataset = self._build_dataset_dict(
+                [
+                    ("train", virus_train),
+                    ("dev", virus_dev),
+                    ("test", virus_test)
+                ]
+            )
+            tokenized_dataset = dataset.map(
+                lambda x: _tokenize_function(x, self._tokenizer),
+                batched=True
+            )
+            return tokenized_dataset
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Could not find dataset files in {dataset_path}. Please ensure train.tsv, dev.tsv, and test.tsv exist.") from e
+        except Exception as e:
+            raise Exception(f"Error building dataset: {str(e)}") from e
 
     def _build_dataset_dict(self, labeled_datasets: list[tuple[str, Dataset]]) -> DatasetDict:
         return DatasetDict(
