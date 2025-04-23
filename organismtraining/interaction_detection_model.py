@@ -107,9 +107,6 @@ class PubmedProteinInteractionTrainer:
     def _build_trainer(self) -> Trainer:
         # Calculate number of training steps based on dataset size
         num_training_steps = len(self._tokenized_dataset["train"]) * 10  # epochs * dataset size
-        num_warmup_steps = num_training_steps // 10  # 10% warmup
-        logger.info(f"Number of training steps: {num_training_steps}")
-        logger.info(f"Number of warmup steps: {num_warmup_steps}")
 
         training_args = TrainingArguments(
             output_dir="test_trainer",
@@ -118,26 +115,21 @@ class PubmedProteinInteractionTrainer:
             per_device_eval_batch_size=16,
             num_train_epochs=10,
             learning_rate=2e-5,
-            weight_decay=0.01,
-            warmup_steps=num_warmup_steps,
-            gradient_accumulation_steps=4,
-            fp16=True,  # Enable mixed precision training
             logging_steps=100,
             save_strategy="epoch",
             load_best_model_at_end=True,
-            metric_for_best_model="auc"
+            metric_for_best_model="f1"
         )
 
         optimizer = Adam(
             params=self._pretrained_model.parameters(),
             lr=2e-5,
             eps=1e-08,
-            weight_decay=0.01
         )
 
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=num_warmup_steps,
+            num_warmup_steps=0,
             num_training_steps=num_training_steps
         )
 
@@ -169,15 +161,6 @@ class PubmedProteinInteractionTrainer:
             virus_test = self._to_dataset(
                 pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
             )
-<<<<<<< HEAD
-=======
-
-            # Log dataset statistics
-            logger.info(f"Train set size: {len(virus_train)}")
-            logger.info(f"Dev set size: {len(virus_dev)}")
-            logger.info(f"Test set size: {len(virus_test)}")
-
->>>>>>> ab755a5fad5583bd844c1024d8b8a1bc78bc642c
             dataset = self._build_dataset_dict(
                 [
                     ("train", virus_train),
