@@ -76,12 +76,14 @@ class CustomBertForSequenceClassification(BertForSequenceClassification):
         return outputs
 
 class PubmedProteinInteractionTrainer:
-    def __init__(self, dataset_path: str, model_path: str):
+    def __init__(self, dataset_path: str, model_path: str, load_model: bool = False):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
-        self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
-        self._pretrained_model = self._load_model_from_checkpoint(model_path)
-        self._trainer = self._build_trainer()
+        if not load_model:
+            self._pretrained_model = self._load_model_from_checkpoint(model_path)
+            self._trainer = self._build_trainer()
+        else:
+            self._load_model_from_latest_checkpoint()
 
     def train(self):
         """Trains model using train/eval data"""
@@ -89,7 +91,14 @@ class PubmedProteinInteractionTrainer:
         self._trainer.train()
         logger.info("Training completed")
 
-    def predict(self) -> tuple:
+
+    def predict(self, dataset_path: str) -> list:
+        """Predicts labels for a given dataset"""
+        tokenized_prediction_set = self._build_tokenized_prediction_set(dataset_path)
+        predictions = self._trainer.predict(tokenized_prediction_set["prediction"])
+        return [_sigmoid(prediction[1]) for prediction in predictions.predictions]
+
+    def eval_test(self) -> tuple:
         """Performs prediction on test data and returns predicted and actual labels."""
         logger.info("Running predictions on test set...")
         predictions = self._trainer.predict(self._tokenized_dataset["test"])
@@ -104,12 +113,19 @@ class PubmedProteinInteractionTrainer:
 
         return predicted_labels, true_labels
 
+    def _load_model_from_latest_checkpoint(self):
+        """Loads model from latest checkpoint"""
+        if not os.path.exists("test_trainer/checkpoint-1390"):
+            raise FileNotFoundError("Latest checkpoint not found")
+        self._pretrained_model = BertForSequenceClassification.from_pretrained(
+            "test_trainer/checkpoint-1390",
+            num_labels=2
+        )
+
     def _build_trainer(self) -> Trainer:
         # Calculate number of training steps based on dataset size
+        self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
         num_training_steps = len(self._tokenized_dataset["train"]) * 10  # epochs * dataset size
-        num_warmup_steps = num_training_steps // 10  # 10% warmup
-        logger.info(f"Number of training steps: {num_training_steps}")
-        logger.info(f"Number of warmup steps: {num_warmup_steps}")
 
         training_args = TrainingArguments(
             output_dir="test_trainer",
@@ -118,26 +134,21 @@ class PubmedProteinInteractionTrainer:
             per_device_eval_batch_size=16,
             num_train_epochs=10,
             learning_rate=2e-5,
-            weight_decay=0.01,
-            warmup_steps=num_warmup_steps,
-            gradient_accumulation_steps=4,
-            fp16=True,  # Enable mixed precision training
             logging_steps=100,
             save_strategy="epoch",
             load_best_model_at_end=True,
-            metric_for_best_model="auc"
+            metric_for_best_model="f1"
         )
 
         optimizer = Adam(
             params=self._pretrained_model.parameters(),
             lr=2e-5,
             eps=1e-08,
-            weight_decay=0.01
         )
 
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=num_warmup_steps,
+            num_warmup_steps=0,
             num_training_steps=num_training_steps
         )
 
@@ -169,15 +180,6 @@ class PubmedProteinInteractionTrainer:
             virus_test = self._to_dataset(
                 pd.read_csv(os.path.join(dataset_path, "test.tsv"), sep='\t')
             )
-<<<<<<< HEAD
-=======
-
-            # Log dataset statistics
-            logger.info(f"Train set size: {len(virus_train)}")
-            logger.info(f"Dev set size: {len(virus_dev)}")
-            logger.info(f"Test set size: {len(virus_test)}")
-
->>>>>>> ab755a5fad5583bd844c1024d8b8a1bc78bc642c
             dataset = self._build_dataset_dict(
                 [
                     ("train", virus_train),
@@ -185,15 +187,25 @@ class PubmedProteinInteractionTrainer:
                     ("test", virus_test)
                 ]
             )
-            tokenized_dataset = dataset.map(
-                lambda x: _tokenize_function(x, self._tokenizer),
-                batched=True
-            )
+            tokenized_dataset = self._tokenize_dataset(dataset)
             return tokenized_dataset
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Could not find dataset files in {dataset_path}. Please ensure train.tsv, dev.tsv, and test.tsv exist.") from e
         except Exception as e:
             raise Exception(f"Error building dataset: {str(e)}") from e
+
+    def _build_tokenized_prediction_set(self, dataset_path: str) -> Dataset:
+        prediction_set = self._to_prediction_set(
+            pd.read_csv(os.path.join(dataset_path), sep='\t')
+        )
+        prediction_set_dict = self._build_dataset_dict([("prediction", prediction_set)])
+        return self._tokenize_dataset(prediction_set_dict)
+
+    def _tokenize_dataset(self, dataset: DatasetDict) -> DatasetDict:
+        return dataset.map(
+            lambda x: _tokenize_function(x, self._tokenizer),
+            batched=True
+        )
 
     def _build_dataset_dict(self, labeled_datasets: list[tuple[str, Dataset]]) -> DatasetDict:
         return DatasetDict(
@@ -206,5 +218,10 @@ class PubmedProteinInteractionTrainer:
         return Dataset.from_dict({
             'id': data['abstract'].tolist(),
             'label': data['label'].tolist(),
+            'text': data['text'].tolist()
+        })
+
+    def _to_prediction_set(self, data: pd.DataFrame) -> Dataset:
+        return Dataset.from_dict({
             'text': data['text'].tolist()
         })
