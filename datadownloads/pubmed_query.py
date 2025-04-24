@@ -9,75 +9,26 @@ import os
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 logger = logging.getLogger(__name__)
+_DATASET = 'virus'
+_IDLIST_PREFIX = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+_DOWNLOAD_PREFIX = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'
+_LARGEST_DATE = "2019/10/31"
 
 class QueryPubmed:
     '''
     Class for querying Pubmed.
-    
+
     Arguments:
         - hgncs: The HGNC symbols to query, if provided.
     '''
-    
+
     def __init__(self, hgncs):
-        self.IDLIST_PREFIX = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         self.hgncs = hgncs
-        self.DOWNLOAD_PREFIX = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'        
-        self.LARGEST_DATE = "2019/10/31"
 
-
-    def createQuery(self, dataset, hgnc='', ands='', nots='', db='pubmed', start=0, return_limit=100000, date=None):
-        '''
-        Creates a query for Pubmed.
-        
-        Arguments:
-            - dataset: The dataset to query.
-            - hgnc: The HGNC symbol to query, if provided.
-            - ands: The ANDs to use in the query.
-            - nots: The NOTs to use in the query.
-            - db: The database to query.
-            - start: The start index of the query.
-            - return_limit: The number of results to return.
-        '''
-        ANDS = ands
-        NOTS = nots
-        DATASET = dataset
-        if dataset == 'malaria':
-            ANDS = f'{ands}+OR+"plasmodium+AND+gene'
-        if dataset == 'bacteria':
-            ANDS = f'{ands}+AND+{hgnc}+AND+human'
-            NOTS = f'{nots}+NOT+virus[mesh]+NOT+mice'
-        if dataset == 'recapture_virus' or dataset == 'new_virus':
-            DATASET = 'virus'
-        if dataset == 'recapture_bacteria' or dataset == 'new_bacteria':
-            DATASET = 'bacteria'
-        if dataset == 'recapture_malaria' or dataset == 'new_malaria':
-            DATASET = 'malaria'
-            
-        
-        if date is not None:
-            params = {
-                'db': db,
-                'term': f'({DATASET} AND human{ANDS}){NOTS} AND ({date}[PDAT]:3000[PDAT])',
-                'retstart': start,
-                "api_key": '49c77251ac91cbaa16ec5ae4269ab17d9d09',
-                'retmax': return_limit,
-            }
-        else:
-            params = {
-                'db': db,
-                'term': f'({DATASET}+AND+human{ANDS}){NOTS}',
-                'retstart': start,
-                "api_key": '49c77251ac91cbaa16ec5ae4269ab17d9d09',
-                'retmax': return_limit,
-            }
-            
-        
-        return self.IDLIST_PREFIX, params# + f"esearch.fcgi?db={db}&term=({DATASET}+AND+human{ANDS}){NOTS}&retstart={start}&retmax={return_limit}"
-    
     def query(self, dataset, XML_ids_range=[], ands='', nots='', db='pubmed', start=0, return_limit=50000, by_hgnc=False, outside_range=False, by_date=True, id_return_limit=100000):
         '''
         Queries Pubmed for valid IDs.
-        
+
         Arguments:
             - XML_ids_range: The XML IDs to query.
             - dataset: The dataset to query.
@@ -90,14 +41,14 @@ class QueryPubmed:
             - outside_range: Whether to query outside the range of XML IDs.
             - id_return_limit: The number of IDs to return.
         '''
-        
+
         XML_ids = []
-            
-        
+
+
         if by_hgnc:
             for hgnc in tqdm(self.hgncs[:]):
                 ANDs = f'{ands}+AND+{hgnc}'
-                base_url, params = self.createQuery(dataset, ands=ANDs, nots=nots, start=start, return_limit=return_limit)
+                base_url, params = self.create_query(ands=ANDs, nots=nots, start=start, return_limit=return_limit)
                 payload_str = "&".join("%s=%s" % (k,v) for k,v in params.items())
                 r = requests.get(base_url, params=payload_str)
                 try:
@@ -111,7 +62,7 @@ class QueryPubmed:
             if by_date:
                 total_num = 0
                 while total_num < 50000:
-                    base_url, params = self.createQuery(dataset, ands=ands, nots=nots, start=start, return_limit=return_limit, date=self.LARGEST_DATE)
+                    base_url, params = self.create_query(ands=ands, nots=nots, start=start, return_limit=return_limit, date=self.LARGEST_DATE)
                     r = requests.get(base_url, params=params)
                     root = ET.fromstring(r.content)
                     for IdList in root.findall('IdList'):
@@ -122,21 +73,21 @@ class QueryPubmed:
                 XML_ids_range.sort()
                 smallest_id = XML_ids_range[0]
                 largest_id = XML_ids_range[len(XML_ids_range)-1]
-                
-                
+
+
                 if not outside_range:
                     for start in range(0, largest_id, return_limit):
-                        base_url, params = self.createQuery(dataset, ands=ANDs, nots=nots, start=start, return_limit=return_limit)
+                        base_url, params = self.create_query(ands=ands, nots=nots, start=start, return_limit=return_limit)
                         r = requests.get(base_url, params=params)
                         root = ET.fromstring(r.content)
                         for IdList in root.findall('IdList'):
                             for ID in IdList.findall('Id'):
                                 if int(ID.text) >= smallest_id and int(ID.text) <= largest_id:
-                                    XML_ids.append(ID.text)                    
+                                    XML_ids.append(ID.text)
                     else:
                         num = 0
                         start = 0
-                        r = requests.get(self.createQuery("hgnc", start))
+                        r = requests.get(self.create_query("hgnc", start))
                         try:
                             root = ET.fromstring(r.content)
                             for IdList in root.findall('IdList'):
@@ -147,11 +98,11 @@ class QueryPubmed:
                                     if num >= id_return_limit:
                                         return XML_ids
                         except Exception as e:
-                            print("err")   
+                            print("err")
                         empty_response = False
                         while root.find('RetMax') != None and root.find('RetMax').text != "0":
                             start += 100000
-                            r = requests.get(self.createQuery("hgnc", start))
+                            r = requests.get(self.create_query("hgnc", start))
                             try:
                                 root = ET.fromstring(r.content)
                                 for IdList in root.findall('IdList'):
@@ -163,13 +114,47 @@ class QueryPubmed:
                                 print("err")
                             if num >= id_return_limit:
                                 return XML_ids
-                    
+
 
         return XML_ids
-    
+
+    def create_query(self, hgnc='', ands='', nots='', db='pubmed', start=0, return_limit=100000, date=None):
+        '''
+        Creates a query for Pubmed.
+
+        Arguments:
+            - dataset: The dataset to query.
+            - hgnc: The HGNC symbol to query, if provided.
+            - ands: The ANDs to use in the query.
+            - nots: The NOTs to use in the query.
+            - db: The database to query.
+            - start: The start index of the query.
+            - return_limit: The number of results to return.
+        '''
+
+        if date is not None:
+            params = {
+                'db': db,
+                'term': f'({_DATASET} AND human{ands}){nots} AND ({date}[PDAT]:3000[PDAT])',
+                'retstart': start,
+                "api_key": '49c77251ac91cbaa16ec5ae4269ab17d9d09',
+                'retmax': return_limit,
+            }
+        else:
+            params = {
+                'db': db,
+                'term': f'({dataset}+AND+human{ands}){NOTS}',
+                'retstart': start,
+                "api_key": '49c77251ac91cbaa16ec5ae4269ab17d9d09',
+                'retmax': return_limit,
+            }
+
+
+        return _IDLIST_PREFIX, params
+
     def add_entries_to_df(self, c, XML_valid_ids, uids, dataset):
         df = pd.read_csv(os.path.join(c['data-directory'], 'dataset_df.csv'))
-        
+
         rows = []
         for uid in tqdm(uids):
             is_pos = 1 if int(uid) in XML_valid_ids else 0
@@ -178,21 +163,21 @@ class QueryPubmed:
             else:
                 rows.append((f'{uid}.txt', is_pos, dataset))
         df2 = pd.DataFrame(rows, columns=['file_name', 'label', 'dataset'])
-            
-        df = df.append(df2, ignore_index = True) 
+
+        df = df.append(df2, ignore_index = True)
         df.to_csv(os.path.join(c['data-directory'], 'dataset_df.csv'), index=False)
-    
+
     def download(self, dataset, uid, XML_valid_ids, path, database='pubmed'):
         '''
         Downloads abstracts from Pubmed.
-        
+
         Arguments:
             - uids: The uids to download.
             - XML_valid_ids: The valid IDs from the XML.
             - path: The path to download to.
             - database: The database to download from.
         '''
-        
+
         params = {
             "db": "pubmed",
             "retmode": "text",
@@ -200,9 +185,9 @@ class QueryPubmed:
             "api_key": '49c77251ac91cbaa16ec5ae4269ab17d9d09',
             "id": uid
         }
-            
-        
-        try:            
+
+
+        try:
             r = requests.get(f"{self.DOWNLOAD_PREFIX}", params=params)
             with open(f"{path}/text/{uid}.txt", "w") as f:
                 f.write(r.text)
