@@ -40,7 +40,7 @@ class PubMedAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-        self.max_retries = 3
+        self.max_retries = 5
         self.retry_delay = 5
 
     def fetch_abstract_dates(self, abstract_ids: List[str]) -> Dict[str, int]:
@@ -103,8 +103,6 @@ class DatasetLoader:
         """Get abstract IDs and ENS IDs based on dataset configuration."""
         if config.dataset == "virus":
             return DatasetLoader._load_virus_dataset(config)
-        elif config.dataset == "malaria":
-            return DatasetLoader._load_malaria_dataset(config)
         elif config.dataset == "recapture_virus":
             return DatasetLoader._load_recapture_virus_dataset(config)
         else:

@@ -22,7 +22,17 @@ class PubmedProteinInteractionEvaluator:
         plt.legend(loc='lower right')
         plt.savefig('roc_curve.png')
 
+    def chart(self, predicted_labels: list):
+        sns.set(style='whitegrid')
+        plt.figure(figsize=(8, 6))
+        plt.hist(predicted_labels, edgecolor='black')
+        plt.xlabel('Predicted Labels')
+        plt.ylabel('Frequency')
+        plt.title('Predicted Labels Histogram')
+        plt.savefig('predicted_labels_histogram.png')
+
 if __name__ == "__main__":
+    evaluator = PubmedProteinInteractionEvaluator()
     parser = argparse.ArgumentParser(description='Train and evaluate protein interaction detection model')
     parser.add_argument('--dataset_path', type=str, required=True,
                       help='Path to the dataset directory containing train.tsv, dev.tsv, and test.tsv files')
@@ -30,15 +40,20 @@ if __name__ == "__main__":
                       help='Path to the model directory containing pretrained_dir')
     parser.add_argument('--retrain', action='store_true',
                       help='Whether to retrain the model from scratch')
-
+    parser.add_argument('--predict_set_path', type=str, required=False,
+                      help='Set on which to evaluate the model')
     args = parser.parse_args()
 
-    pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path)
 
     if args.retrain:
+        pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path)
         pubmed_trainer.train()
+    else:
+        pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path, load_model=True)
 
-    predicted_labels, true_labels = pubmed_trainer.predict()
-
-    evaluator = PubmedProteinInteractionEvaluator()
-    evaluator.evaluate(predicted_labels, true_labels)
+    if args.predict_set_path:
+        predicted_labels = pubmed_trainer.predict(args.predict_set_path)
+        evaluator.chart(predicted_labels)
+    else:
+        predicted_labels, true_labels = pubmed_trainer.eval_test()
+        evaluator.evaluate(predicted_labels, true_labels)
