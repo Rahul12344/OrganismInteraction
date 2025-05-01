@@ -1,6 +1,4 @@
-import os
-
-MONTHS = {
+MONTH_MAP = {
     "Jan": "01",
     "Feb": "02",
     "Mar": "03",
@@ -14,5 +12,3 @@ MONTHS = {
     "Nov": "11",
     "Dec": "12",
 }
-
-DATA_DIR = os.environ.get("DATA_DIR")

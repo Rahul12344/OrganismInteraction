@@ -1,4 +1,5 @@
 import os, sys
+from typing import Any
 import logging
 import pandas as pd
 import requests
@@ -10,15 +11,22 @@ from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
+import argparse
+import random
+from threading import Thread
+from os import path
+from collections import defaultdict
+
 
 try:
     import queue
 except ImportError:
     import Queue as queue
 
-from datadownloads.consts import MONTHS
-from pubmed_query import QueryPubmed
-from datadownloads.download_client import DownloadWorker
+from datadownloads.pubmed_query import PubMedAbstractIdFetcher, PubMedDownloader
+from utils.data_utils import get_true_positive_ids, get_enriched_ensembl_ids, get_hgnc_symbol_from_ensembl_id_or_none
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -26,211 +34,94 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class DatasetConfig:
-    """Configuration for dataset processing."""
-    dataset: str
-    data_directory: str
-    filenames: Dict[str, str]
-    neg: bool = False
+_ABSTRACT_ID_RANGE_PARAM = "abstract_id_range"
+_HGNC_SYMBOL_PARAM = "hgnc_symbols"
+_ABSTRACT_IDS_PARAM = "abstract_ids"
 
-class PubMedAPI:
-    """Handles interactions with the PubMed API."""
+class DownloadWorker(Thread):
+    def __init__(
+        self,
+        thread_queue: queue.Queue,
+        api_key: str,
+        temp_download_path: str
+    ):
+        '''
+        Class for downloading data from a source.
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-        self.max_retries = 5
-        self.retry_delay = 5
+        Temporarily stores the downloaded abstracts in memory for further parsing into a dataframe.
+        '''
+        Thread.__init__(self)
+        self._thread_queue = thread_queue
+        self._download_path = temp_download_path
+        self._pubmed_downloader = PubMedDownloader(api_key)
 
-    def fetch_abstract_dates(self, abstract_ids: List[str]) -> Dict[str, int]:
-        """Fetch publication dates for a list of abstract IDs."""
-        abstract_dates = {}
-
-        for abstract_id in tqdm(abstract_ids, desc="Fetching abstract dates"):
-            for attempt in range(self.max_retries):
-                try:
-                    response = self._make_request(abstract_id)
-                    date = self._parse_pub_date(response)
-                    if date:
-                        abstract_dates[abstract_id] = date
-                    break
-                except Exception as e:
-                    if attempt == self.max_retries - 1:
-                        logger.error(f"Failed to fetch date for abstract {abstract_id}: {e}")
-                    sleep(self.retry_delay)
-
-        return abstract_dates
-
-    def _make_request(self, abstract_id: str) -> str:
-        """Make a request to the PubMed API."""
-        params = {
-            "db": "pubmed",
-            "retmode": "xml",
-            "api_key": self.api_key,
-            "id": abstract_id,
-        }
-        response = requests.get(self.base_url, params=params)
-        response.raise_for_status()
-        return response.text
-
-    def _parse_pub_date(self, xml_text: str) -> Optional[int]:
-        """Parse publication date from XML response."""
-        try:
-            xml_tree = ET.fromstring(xml_text)
-            for article in xml_tree.findall(".//PubmedArticle"):
-                pmid = article.find(".//PMID").text
-                pub_date_node = article.find(".//PubDate")
-
-                year = pub_date_node.find(".//Year")
-                month = pub_date_node.find(".//Month")
-                day = pub_date_node.find(".//Day")
-
-                if year is not None:
-                    month = MONTHS.get(month.text, "01") if month is not None else "01"
-                    day = day.text if day is not None else "01"
-                    date_string = f"{year.text}-{month.zfill(2)}-{day.zfill(2)}"
-                    return convert_date(date_string)
-        except Exception as e:
-            logger.error(f"Error parsing publication date: {e}")
-        return None
-
-class DatasetLoader:
-    """Handles loading and processing of dataset files."""
-
-    @staticmethod
-    def get_abstract_ids(config: DatasetConfig) -> Tuple[List[str], List[str]]:
-        """Get abstract IDs and ENS IDs based on dataset configuration."""
-        if config.dataset == "virus":
-            return DatasetLoader._load_virus_dataset(config)
-        elif config.dataset == "recapture_virus":
-            return DatasetLoader._load_recapture_virus_dataset(config)
-        else:
-            raise ValueError(f"Unsupported dataset type: {config.dataset}")
-
-    @staticmethod
-    def _load_virus_dataset(config: DatasetConfig) -> Tuple[List[str], List[str]]:
-        """Load virus dataset."""
-        pubmed_ids = []
-        ens_ids = []
-
-        with open(os.path.join(config.data_directory, config.filenames['virus-ids']), "r") as f:
-            for line in f.readlines()[1:]:
-                ensid_pubmedids_viruses = line.split("\t")
-                ens_id = ensid_pubmedids_viruses[0]
-                pubmedids_viruses = ensid_pubmedids_viruses[1].rstrip(",\n").split(",")
-
-                for pubmed_id_virus in pubmedids_viruses:
-                    pubmed_id = pubmed_id_virus.split("-")[0]
-                    if pubmed_id not in ["interactions information", "retracted"]:
-                        pubmed_ids.append(int(pubmed_id))
-                ens_ids.append(ens_id)
-
-        return list(set(ens_ids)), list(set(pubmed_ids))
-
-    @staticmethod
-    def _load_malaria_dataset(config: DatasetConfig) -> Tuple[List[str], List[str]]:
-        """Load malaria dataset."""
-        malaria_df = pd.read_csv(config.filenames["malaria-ids"], sep=",")
-        ens_ids = malaria_df["ENSID"].tolist()
-        pubmed_ids = []
-
-        for pubmed_ids_str in malaria_df["Pubmed_IDs"].tolist():
-            pubmed_ids.extend(pubmed_ids_str.split("*"))
-
-        return ens_ids, pubmed_ids
-
-    @staticmethod
-    def _load_recapture_virus_dataset(config: DatasetConfig) -> Tuple[List[str], List[str]]:
-        """Load recapture virus dataset."""
-        if config.neg:
-            with open(config.filenames["enriched-ids"], "r") as f:
-                neg_ens_ids = [line.rstrip("\n") for line in f.readlines()]
-
-            ens_ids, pubmed_ids = DatasetLoader._load_virus_dataset(config)
-            neg_ens_ids.extend(ens_ids)
-            neg_ens_ids = set(neg_ens_ids)
-
-            mart_export_df = pd.read_csv(config.filenames["mart-export"], sep="\t")
-            all_ens_ids = set(mart_export_df["Ensembl Gene ID"].values.tolist())
-            ens_ids = random.sample(list(all_ens_ids - neg_ens_ids), 5000)
-        else:
-            with open(config.filenames["enriched-ids"], "r") as f:
-                ens_ids = [line.rstrip("\n") for line in f.readlines()]
-            _, pubmed_ids = DatasetLoader._load_virus_dataset(config)
-
-        return ens_ids, pubmed_ids
-
-    @staticmethod
-    def get_hgncs(config: DatasetConfig, ens_ids: List[str]) -> List[str]:
-        """Get HGNC symbols for ENS IDs."""
-        mart_export_df = pd.read_csv(config.filenames["mart-export"], sep="\t")
-        hgncs = []
-
-        for ens_id in ens_ids:
-            hgnc_symbols = mart_export_df[
-                mart_export_df["Ensembl Gene ID"] == ens_id.strip()
-            ]["HGNC symbol"].tolist()
-            if hgnc_symbols:
-                hgncs.append(hgnc_symbols[0])
-
-        return hgncs
+    def run(self):
+        '''
+        Runs the thread.
+        '''
+        while True:
+            item_to_download = self._thread_queue.get()
+            logger.info(f'Downloading abstracts related to {item_to_download}')
+            try:
+                if path.isfile(f"{self._download_path}/{item_to_download}.txt"):
+                    logger.info(f'Already downloaded {item_to_download}')
+                else:
+                    text = self._pubmed_downloader(item_to_download)
+                    with open(f"{self._download_path}/{item_to_download}.txt", "w") as f:
+                        f.write(text)
+                    logger.info('Downloaded abstracts related to {0}'.format(item_to_download))
+                    self._thread_queue.task_done()
+                    sleep(1)
+            except Exception as e:
+                logger.error("Failed to download:{0}".format(str(e)))
+                self._thread_queue.put(item_to_download)
+                logger.info(f'Re-queueing {item_to_download}')
+                sleep(1)
+                self._thread_queue.task_done()
 
 class DownloadClient:
     """Client for downloading and processing PubMed data."""
 
-    def __init__(self, config: DatasetConfig, download_path: str, num_threads: int):
-        self.config = config
-        self.download_path = download_path
-        self.num_threads = num_threads
-        self.api = PubMedAPI(api_key="49c77251ac91cbaa16ec5ae4269ab17d9d09")
-        self.dataset_loader = DatasetLoader()
+    def __init__(
+        self,
+        dataset: str,
+        temp_download_path: str,
+        data_path: str,
+        num_threads: int,
+        api_key: str,
+    ):
+        self._dataset = dataset
+        self._temp_download_path = temp_download_path
+        # make a directory for the temp download path if it doesn't exist
+        Path(temp_download_path).mkdir(parents=True, exist_ok=True)
+        self._data_path = data_path
+        self._num_threads = num_threads
+        self._api_key = api_key
+        self._id_fetcher = PubMedAbstractIdFetcher(api_key)
 
-    def download(self):
+    def __call__(self):
         """Main download process."""
-        # Get dataset IDs
-        ens_ids, pubmed_ids = self.dataset_loader.get_abstract_ids(self.config)
-        hgncs = self.dataset_loader.get_hgncs(self.config, ens_ids[:])
-
         # Query PubMed
-        query_client = QueryPubmed(hgncs=hgncs)
-        abstract_XML_ids = query_client.query(
-            dataset=self.config.dataset,
-            XML_ids_range=pubmed_ids,
-            by_hgnc=True,
-            by_date=False,
-            return_limit=100,
+        custom_params = self._get_custom_params(self._dataset)
+        abstract_XML_ids = self._id_fetcher(
+            dataset=self._dataset,
+            **custom_params
         )
 
-        # Process results
-        query_client.add_entries_to_df(self.config, pubmed_ids, abstract_XML_ids, self.config.dataset)
-
-        # Get final XML IDs
-        df = pd.read_csv(os.path.join(self.config.data_directory, "dataset_df.csv"))
-        if self.config.dataset == "recapture_virus" and self.config.neg:
-            abstract_XML_ids = [
-                ids[:-4] for ids in df[df["dataset"] == "negative_recapture"]["file_name"].values.tolist()
-            ]
-        else:
-            abstract_XML_ids = [
-                ids[:-4] for ids in df[df["dataset"] == self.config.dataset]["file_name"].values.tolist()
-            ]
-
         # Download abstracts
-        self._download_abstracts(abstract_XML_ids, pubmed_ids)
+        self._download_abstracts(abstract_XML_ids)
 
-    def _download_abstracts(self, abstract_XML_ids: List[str], pubmed_ids: List[str]):
+    def _download_abstracts(self, abstract_XML_ids: list[str]):
         """Download abstracts using multiple workers."""
-        queuer = queue.Queue(maxsize=0)
+        thread_queue = queue.Queue(maxsize=0)
 
         # Start workers
         workers = []
-        for _ in range(self.num_threads):
+        for _ in range(self._num_threads):
             worker = DownloadWorker(
-                queuer=queuer,
-                XML_ids=pubmed_ids,
-                dataset=self.config.dataset,
-                download_path=self.download_path,
+                thread_queue=thread_queue,
+                api_key=self._api_key,
+                temp_download_path=self._temp_download_path,
             )
             worker.daemon = True
             worker.start()
@@ -238,13 +129,117 @@ class DownloadClient:
 
         # Queue work
         for abstract_id in abstract_XML_ids:
-            logger.info(f"Queueing {self.config.dataset} abstract {abstract_id}")
-            queuer.put(abstract_id)
+            logger.info(f"Queueing {self._dataset} abstract {abstract_id}")
+            thread_queue.put(abstract_id)
 
         # Wait for completion
-        queuer.join()
+        thread_queue.join()
 
-def convert_date(date: str, date_format: str = "%Y-%m-%d") -> int:
-    """Convert date string to integer format."""
-    date_time_str = datetime.strptime(date, date_format)
-    return 10000 * date_time_str.year + 100 * date_time_str.month + date_time_str.day
+        # Process results
+        self._process_results(abstract_XML_ids)
+
+    def _get_custom_params(self, dataset: str) ->dict[str, Any]:
+        """Get custom parameters for the dataset."""
+        if dataset == "standard":
+            true_positive_ids = get_true_positive_ids("dataset/VIP_ids.txt")
+            return {
+                _ABSTRACT_IDS_PARAM: true_positive_ids,
+                _ABSTRACT_ID_RANGE_PARAM: [min(true_positive_ids), max(true_positive_ids)]
+            }
+        elif dataset == "recapture":
+            mart_export_df = pd.read_csv("dataset/mart_export.tsv", sep="\t")
+            hgnc_symbols = [get_hgnc_symbol_from_ensembl_id_or_none(ensembl_id, mart_export_df) for ensembl_id in get_enriched_ensembl_ids("dataset/mass-spec_VIPs.txt")]
+            hgnc_symbols = [str(hgnc_symbol) for hgnc_symbol in hgnc_symbols if hgnc_symbol is not None]
+            return {
+                _HGNC_SYMBOL_PARAM: hgnc_symbols,
+            }
+        elif dataset == "negative":
+            return {
+                _ABSTRACT_IDS_PARAM: true_positive_ids,
+                _ABSTRACT_ID_RANGE_PARAM: [min(true_positive_ids), max(true_positive_ids)]
+            }
+        else:
+            raise ValueError(f"Unsupported dataset type: {dataset}")
+
+    def _process_results(self, abstract_XML_ids: list[str]):
+        """Process results."""
+        file_text, file_ids = [], []
+        for file in os.listdir(self._temp_download_path):
+            with open(os.path.join(self._temp_download_path, file), "r") as f:
+                file_text.append(f.read())
+                file_ids.append(file.split(".")[0])
+
+        if os.path.exists(self._temp_download_path):
+            shutil.rmtree(self._temp_download_path)
+
+        if self._dataset == "standard":
+            self._process_standard_dataset(file_text, file_ids)
+        elif self._dataset == "recapture":
+            self._process_recapture_virus_dataset(file_text, file_ids)
+        elif self._dataset == "negative":
+            self._process_negative_virus_dataset(file_text, file_ids)
+        else:
+            raise ValueError(f"Unsupported dataset type: {dataset}")
+
+
+    def _process_standard_dataset(self, file_text: list[str], file_ids: list[str], true_positive_ids: set[str]):
+        """Process standard dataset."""
+        # Collect all data first
+        data = []
+        for file_id, text in zip(file_ids, file_text):
+            label = 1 if file_id in true_positive_ids else 0
+            data.append({
+                "abstract_id": file_id,
+                "abstract_text": text,
+                "label": label
+            })
+
+        # Create DataFrame in one go
+        df = pd.DataFrame(data)
+        df.to_csv(os.path.join(self._data_path, "standard_dataset.tsv"), index=False, sep="\t")
+
+    def _process_recapture_virus_dataset(self, file_text: list[str], file_ids: list[str]):
+        """Process recapture virus dataset."""
+        # Collect all data first
+        data = []
+        for file_id, text in zip(file_ids, file_text):
+            data.append({
+                "abstract_id": file_id,
+                "abstract_text": text
+            })
+
+        # Create DataFrame in one go
+        df = pd.DataFrame(data)
+        df.to_csv(os.path.join(self._data_path, "recapture_virus_dataset.tsv"), index=False, sep="\t")
+
+    def _process_negative_virus_dataset(self, file_text: list[str], file_ids: list[str]):
+        """Process negative virus dataset."""
+        # Collect all data first
+        data = []
+        for file_id, text in zip(file_ids, file_text):
+            data.append({
+                "abstract_id": file_id,
+                "abstract_text": text
+            })
+
+        # Create DataFrame in one go
+        df = pd.DataFrame(data)
+        df.to_csv(os.path.join(self._data_path, "negative_virus_dataset.tsv"), index=False, sep="\t")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, required=True, help="Dataset to download")
+    parser.add_argument("--data_path", type=str, required=True, help="Path to save the downloaded data")
+    parser.add_argument("--temp_download_path", type=str, required=True, help="Path to save the temporary downloaded data")
+    parser.add_argument("--num_threads", type=int, required=True, help="Number of threads to use for downloading")
+    parser.add_argument("--api_key", type=str, required=True, help="API key for PubMed")
+    args = parser.parse_args()
+
+    download_client = DownloadClient(
+        dataset=args.dataset,
+        data_path=args.data_path,
+        temp_download_path=args.temp_download_path,
+        num_threads=args.num_threads,
+        api_key=args.api_key
+    )
+    download_client()
