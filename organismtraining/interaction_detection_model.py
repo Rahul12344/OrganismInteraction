@@ -78,8 +78,8 @@ class CustomBertForSequenceClassification(BertForSequenceClassification):
 class PubmedProteinInteractionTrainer:
     def __init__(self, dataset_path: str, model_path: str, load_model: bool = False):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
-        self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         if not load_model:
+            self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
             self._pretrained_model = self._load_model_from_checkpoint(model_path)
             self._trainer = self._build_trainer()
         else:
@@ -90,6 +90,7 @@ class PubmedProteinInteractionTrainer:
         logger.info("Starting training...")
         self._trainer.train()
         logger.info("Training completed")
+        self._trainer.save_model(os.path.join(model_path, "trained_model"))
 
 
     def predict(self, dataset_path: str) -> list:
@@ -113,14 +114,13 @@ class PubmedProteinInteractionTrainer:
 
         return predicted_labels, true_labels
 
-    def _load_model_from_latest_checkpoint(self):
+    def _load_model_from_latest_checkpoint(self, model_path):
         """Loads model from latest checkpoint"""
-        if not os.path.exists("test_trainer/checkpoint-1390"):
-            raise FileNotFoundError("Latest checkpoint not found")
         self._pretrained_model = BertForSequenceClassification.from_pretrained(
-            "test_trainer/checkpoint-1390",
+            os.path.join(model_path, "trained_model"),
             num_labels=2
         )
+        self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, "trained_model"))
 
     def _build_trainer(self) -> Trainer:
         # Calculate number of training steps based on dataset size
