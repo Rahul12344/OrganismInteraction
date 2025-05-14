@@ -27,7 +27,13 @@ python datadownloads/download_client.py
 To create a 60:20:20 split for training,
 ```
 python datadownloads/dataset_splitter.py
+\ --input_path=$INPUT # path to downloaded dataset
 \ --output_path=$OUTPUT
+\ --train_ratio=$TRAIN_RATIO
+\ --dev_ratio=$DEV_RATIO
+\ --test_ratio=$TEST_RATIO # must sum to 1.0
+\ --pos_neg_ratio=$RATIO # ratio of pos to neg
+\ --seed=$SEED
 ```
 
 ### "Recapture" evaluation set download
