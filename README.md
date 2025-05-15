@@ -20,9 +20,47 @@ We provide a script for downloading each of the datasets discussed.
 To get the labeled dataset for the model,
 ```
 python datadownloads/download_client.py
-\ --output_path=$OUTPUT
-\ --dataset_name="labeled_dataset"
+\ --dataset=standard # one of "standard - for train/test/dev dataset, recapture, or negative"
+\ --data_path=$OUTPUT # output path of dataset download
+\ --temp_download_path=$TEMP # temporary path for dataset download for txt files
+\ --num_threads=10 # number of threads with which to download
+\ --api_key=$PUBMED_API_KEY
 ```
+
+To create a 60:20:20 split for training,
+```
+python datadownloads/data_sampler.py
+\ --input_path=$DATASET_PATH
+\ --output_path=$OUTPUT_PATH
+\ --train_ratio=0.6
+\ --dev_ratio=0.2
+\ --test_ratio=0.2
+\ --pos_neg_ratio
+```
+
+### "Recapture" evaluation set download
+To get the unlabeled dataset for the model,
+```
+python datadownloads/download_client.py
+\ --dataset=recapture # one of "standard - for train/test/dev dataset, recapture, or negative"
+\ --data_path=$OUTPUT # output path of dataset download
+\ --temp_download_path=$TEMP # temporary path for dataset download for txt files
+\ --num_threads=10 # number of threads with which to download
+\ --api_key=$PUBMED_API_KEY
+```
+
+### "Negative" evaluation set download
+To get the labeled dataset for the model,
+```
+python datadownloads/download_client.py
+\ --dataset=negative # one of "standard - for train/test/dev dataset, recapture, or negative"
+\ --data_path=$OUTPUT # output path of dataset download
+\ --temp_download_path=$TEMP # temporary path for dataset download for txt files
+\ --num_threads=10 # number of threads with which to download
+\ --api_key=$PUBMED_API_KEY
+```
+
+### Creating data split
 
 To create a 60:20:20 split for training,
 ```
@@ -34,22 +72,6 @@ python datadownloads/dataset_splitter.py
 \ --test_ratio=$TEST_RATIO # must sum to 1.0
 \ --pos_neg_ratio=$RATIO # ratio of pos to neg
 \ --seed=$SEED
-```
-
-### "Recapture" evaluation set download
-To get the labeled dataset for the model,
-```
-python datadownloads/download_client.py
-\ --output_path=$OUTPUT
-\ --dataset_name="recapture_dataset"
-```
-
-### "Standard" evaluation set download
-To get the labeled dataset for the model,
-```
-python datadownloads/download_client.py
-\ --output_path=$OUTPUT
-\ --dataset_name="negative_dataset"
 ```
 
 ## Training
