@@ -1,0 +1,24 @@
+# macOS system files
+*.DS_Store
+
+# Python cache and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Binary files
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+*.o
+*.a
+*.lib
+
+# Pretrain model and data files
+model/
+dataset/
+temp/
+*.png
