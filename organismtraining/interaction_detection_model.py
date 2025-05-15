@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _METRIC = evaluate.load("f1")
 _PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
+_FINETUNED_MODEL_DIR = "bluebert_finetuned_model"
 _MAX_LENGTH = 512
 _SEED = 42
 
@@ -89,13 +90,14 @@ class PubmedProteinInteractionTrainer:
         """Trains model using train/eval data"""
         logger.info("Starting training...")
         self._trainer.train()
+        self._trainer.save_model(os.path.join(model_path, _FINETUNED_MODEL_DIR))
         logger.info("Training completed")
 
 
     def predict(self, dataset_path: str) -> list:
         """Predicts labels for a given dataset"""
         tokenized_prediction_set = self._build_tokenized_prediction_set(dataset_path)
-        predictions = self._trainer.predict(tokenized_prediction_set["prediction"])
+        predictions = self._pretrained_model(tokenized_prediction_set["prediction"])
         return [_sigmoid(prediction[1]) for prediction in predictions.predictions]
 
     def eval_test(self) -> tuple:
@@ -115,11 +117,14 @@ class PubmedProteinInteractionTrainer:
 
     def _load_model_from_latest_checkpoint(self):
         """Loads model from latest checkpoint"""
-        if not os.path.exists("test_trainer/checkpoint-1390"):
+        if not os.path.exists(os.path.join(model_path, _FINETUNED_MODEL_DIR)):
             raise FileNotFoundError("Latest checkpoint not found")
         self._pretrained_model = BertForSequenceClassification.from_pretrained(
-            "test_trainer/checkpoint-1390",
+            os.path.join(model_path, _FINETUNED_MODEL_DIR),
             num_labels=2
+        )
+        self._tokenizer = BertTokenizer.from_pretrained(
+            os.path.join(model_path, _FINETUNED_MODEL_DIR),
         )
 
     def _build_trainer(self) -> Trainer:
