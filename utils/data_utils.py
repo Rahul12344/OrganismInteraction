@@ -10,6 +10,7 @@ def get_true_positive_ids(dataset_path: str) -> set:
     """
     Get the true positive IDs from the dataset.
     """
+    pubmed_ids = []
     with open(dataset_path, "r") as f:
         lines = f.readlines()[1:]
 

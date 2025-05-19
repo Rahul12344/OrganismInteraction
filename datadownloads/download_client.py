@@ -113,6 +113,9 @@ class DownloadClient:
 
     def _download_abstracts(self, abstract_XML_ids: list[str]):
         """Download abstracts using multiple workers."""
+        if not abstract_XML_ids:
+            raise ValueError("No abstract IDs to download")
+
         thread_queue = queue.Queue(maxsize=0)
 
         # Start workers
