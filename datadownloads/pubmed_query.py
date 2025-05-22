@@ -95,15 +95,25 @@ class PubMedAbstractIdFetcher:
         ands:list[str]=[],
         nots:list[str]=[],
         start:int=0,
-        return_limit:int=50000,
+        return_limit:int=10000,
         id_return_limit:int=100000,
         date:str=None,
         **kwargs
     ):
         if dataset not in ['standard', 'recapture', 'negative']:
             raise ValueError("dataset must be one of 'standard', 'recapture', or 'negative'")
-
-        if dataset == 'recapture':
+        if dataset == 'standard':
+            return self._get_abstract_ids_for_standard_set(
+                dataset=dataset,
+                ands=ands,
+                nots=nots,
+                start=start,
+                return_limit=return_limit,
+                id_return_limit=id_return_limit,
+                date=date,
+                **kwargs
+            )
+        elif dataset == 'recapture':
             return self._get_abstract_ids_for_recapture_set(
                 dataset=dataset,
                 ands=ands,
@@ -122,37 +132,48 @@ class PubMedAbstractIdFetcher:
         ands:list[str]=[],
         nots:list[str]=[],
         start:int=0,
-        return_limit:int=50000,
+        return_limit:int=10000,
         id_return_limit:int=100000,
         date:str=None,
         **kwargs
     ) -> list[str]:
         abstract_id_range = kwargs.get('abstract_id_range', [])
-        if not isinstance(hgnc_symbols, list) or not all(isinstance(symbol, int) for symbol in hgnc_symbols):
-            raise ValueError("abstract_id_range must be a list of strings")
+        if not isinstance(abstract_id_range, list) or not all(isinstance(abstract_id, int) for abstract_id in abstract_id_range):
+            raise ValueError("abstract_id_range must be a list of ints")
         if not abstract_id_range or len(abstract_id_range) != 2 or abstract_id_range[0] >= abstract_id_range[1]:
             raise ValueError("abstract_id_range is required, please provide a lower and upper bound of the range")
+
+        positive_ids = list(kwargs.get('abstract_ids', []))
+        if not isinstance(positive_ids, list) or not all(isinstance(abstract_id, int) for abstract_id in positive_ids):
+            raise ValueError("abstract_ids must be a list of str")
+        if not positive_ids:
+            raise ValueError("abstract_ids is required, please provide a list of positive IDs")
 
         abstract_ids = []
         smallest_id = abstract_id_range[0]
         largest_id = abstract_id_range[1]
-        for start_index in range(smallest_id, largest_id+1, return_limit):
+        print(smallest_id, largest_id)
+        for start_index in tqdm(range(smallest_id, largest_id+1, return_limit), desc="Fetching abstract IDs for standard set"):
             params = self._create_params(
-                start=start_index,
+                ands=f'{start_index}:{start_index+return_limit}[uid]',
+                return_limit=return_limit,
             )
             r = requests.get(_IDLIST_PREFIX, params=params)
+            print(r.url)
             root = ET.fromstring(r.content)
             for ids in root.findall('IdList'):
                 for unformatted_id in ids.findall('Id'):
                     formatted_id = unformatted_id.text
                     try:
                         if int(formatted_id) >= smallest_id and int(formatted_id) <= largest_id:
+                            #print(formatted_id)
                             abstract_ids.append(formatted_id)
                     except _:
                         logger.error(f"Invalid ID: {formatted_id}")
                         continue
 
-
+        abstract_ids.extend([str(abstract_id) for abstract_id in positive_ids])
+        abstract_ids = sorted(list(set(abstract_ids)))
         return abstract_ids
 
     def _get_abstract_ids_for_recapture_set(
@@ -161,7 +182,7 @@ class PubMedAbstractIdFetcher:
         ands:list[str]=[],
         nots:list[str]=[],
         start:int=0,
-        return_limit:int=50000,
+        return_limit:int=10000,
         id_return_limit:int=100000,
         date:str=None,
         **kwargs
@@ -193,7 +214,7 @@ class PubMedAbstractIdFetcher:
         ands:list[str]=[],
         nots:list[str]=[],
         start:int=0,
-        return_limit:int=50000,
+        return_limit:int=10000,
         id_return_limit:int=100000,
         date:str=None,
         **kwargs

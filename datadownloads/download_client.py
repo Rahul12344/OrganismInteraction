@@ -60,24 +60,28 @@ class DownloadWorker(Thread):
         Runs the thread.
         '''
         while True:
-            item_to_download = self._thread_queue.get()
-            logger.info(f'Downloading abstracts related to {item_to_download}')
             try:
-                if path.isfile(f"{self._download_path}/{item_to_download}.txt"):
-                    logger.info(f'Already downloaded {item_to_download}')
-                else:
-                    text = self._pubmed_downloader(item_to_download)
-                    with open(f"{self._download_path}/{item_to_download}.txt", "w") as f:
-                        f.write(text)
-                    logger.info('Downloaded abstracts related to {0}'.format(item_to_download))
-                    self._thread_queue.task_done()
+                item_to_download = self._thread_queue.get(timeout=1)  # Add timeout to prevent hanging
+                logger.info(f'Downloading abstracts related to {item_to_download}')
+                try:
+                    if path.isfile(f"{self._download_path}/{item_to_download}.txt"):
+                        logger.info(f'Already downloaded {item_to_download}')
+                    else:
+                        text = self._pubmed_downloader(item_to_download)
+                        with open(f"{self._download_path}/{item_to_download}.txt", "w") as f:
+                            f.write(text)
+                        logger.info('Downloaded abstracts related to {0}'.format(item_to_download))
                     sleep(1)
-            except Exception as e:
-                logger.error("Failed to download:{0}".format(str(e)))
-                self._thread_queue.put(item_to_download)
-                logger.info(f'Re-queueing {item_to_download}')
-                sleep(1)
-                self._thread_queue.task_done()
+                except Exception as e:
+                    logger.error("Failed to download:{0}".format(str(e)))
+                    self._thread_queue.put(item_to_download)
+                    logger.info(f'Re-queueing {item_to_download}')
+                    sleep(1)
+                finally:
+                    self._thread_queue.task_done()
+            except queue.Empty:
+                # No more items in queue, exit the thread
+                break
 
 class DownloadClient:
     """Client for downloading and processing PubMed data."""
@@ -92,8 +96,9 @@ class DownloadClient:
     ):
         self._dataset = dataset
         self._temp_download_path = temp_download_path
-        # make a directory for the temp download path if it doesn't exist
+        # make directories for both paths if they don't exist
         Path(temp_download_path).mkdir(parents=True, exist_ok=True)
+        Path(data_path).mkdir(parents=True, exist_ok=True)
         self._data_path = data_path
         self._num_threads = num_threads
         self._api_key = api_key
@@ -109,9 +114,9 @@ class DownloadClient:
         )
 
         # Download abstracts
-        self._download_abstracts(abstract_XML_ids)
+        self._download_abstracts(abstract_XML_ids, custom_params)
 
-    def _download_abstracts(self, abstract_XML_ids: list[str]):
+    def _download_abstracts(self, abstract_XML_ids: list[str], custom_params: dict[str, Any]):
         """Download abstracts using multiple workers."""
         if not abstract_XML_ids:
             raise ValueError("No abstract IDs to download")
@@ -139,7 +144,7 @@ class DownloadClient:
         thread_queue.join()
 
         # Process results
-        self._process_results(abstract_XML_ids)
+        self._process_results(abstract_XML_ids, custom_params)
 
     def _get_custom_params(self, dataset: str) ->dict[str, Any]:
         """Get custom parameters for the dataset."""
@@ -164,7 +169,7 @@ class DownloadClient:
         else:
             raise ValueError(f"Unsupported dataset type: {dataset}")
 
-    def _process_results(self, abstract_XML_ids: list[str]):
+    def _process_results(self, abstract_XML_ids: list[str], custom_params: dict[str, Any]):
         """Process results."""
         file_text, file_ids = [], []
         for file in os.listdir(self._temp_download_path):
@@ -176,7 +181,7 @@ class DownloadClient:
             shutil.rmtree(self._temp_download_path)
 
         if self._dataset == "standard":
-            self._process_standard_dataset(file_text, file_ids)
+            self._process_standard_dataset(file_text, file_ids, custom_params.get(_ABSTRACT_IDS_PARAM, []))
         elif self._dataset == "recapture":
             self._process_recapture_virus_dataset(file_text, file_ids)
         elif self._dataset == "negative":
