@@ -1,7 +1,7 @@
 import requests
 import xml.etree.ElementTree as ET
 import logging
-import random
+from random import seed, sample
 from tqdm import tqdm
 import pandas as pd
 import os
@@ -86,8 +86,9 @@ class PubMedAbstractDateFetcher:
         return None
 
 class PubMedAbstractIdFetcher:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, subsample: bool):
         self._api_key = api_key
+        self._subsample = subsample
 
     def __call__(
         self,
@@ -143,7 +144,7 @@ class PubMedAbstractIdFetcher:
         if not abstract_id_range or len(abstract_id_range) != 2 or abstract_id_range[0] >= abstract_id_range[1]:
             raise ValueError("abstract_id_range is required, please provide a lower and upper bound of the range")
 
-        positive_ids = list(kwargs.get('abstract_ids', []))
+        positive_ids = sorted(list(kwargs.get('abstract_ids', [])))
         if not isinstance(positive_ids, list) or not all(isinstance(abstract_id, int) for abstract_id in positive_ids):
             raise ValueError("abstract_ids must be a list of str")
         if not positive_ids:
@@ -152,14 +153,12 @@ class PubMedAbstractIdFetcher:
         abstract_ids = []
         smallest_id = abstract_id_range[0]
         largest_id = abstract_id_range[1]
-        print(smallest_id, largest_id)
         for start_index in tqdm(range(smallest_id, largest_id+1, return_limit), desc="Fetching abstract IDs for standard set"):
             params = self._create_params(
                 ands=f'{start_index}:{start_index+return_limit}[uid]',
                 return_limit=return_limit,
             )
             r = requests.get(_IDLIST_PREFIX, params=params)
-            print(r.url)
             root = ET.fromstring(r.content)
             for ids in root.findall('IdList'):
                 for unformatted_id in ids.findall('Id'):
@@ -172,6 +171,10 @@ class PubMedAbstractIdFetcher:
                         logger.error(f"Invalid ID: {formatted_id}")
                         continue
 
+        if self._subsample:
+            seed(42)
+            non_positive_ids = [abstract_id for abstract_id in abstract_ids if abstract_id not in set(positive_ids)]
+            abstract_ids = sample(non_positive_ids, min(len(non_positive_ids), 10000))
         abstract_ids.extend([str(abstract_id) for abstract_id in positive_ids])
         abstract_ids = sorted(list(set(abstract_ids)))
         return abstract_ids

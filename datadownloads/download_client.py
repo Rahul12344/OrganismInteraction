@@ -93,6 +93,7 @@ class DownloadClient:
         data_path: str,
         num_threads: int,
         api_key: str,
+        subsample: bool
     ):
         self._dataset = dataset
         self._temp_download_path = temp_download_path
@@ -102,7 +103,7 @@ class DownloadClient:
         self._data_path = data_path
         self._num_threads = num_threads
         self._api_key = api_key
-        self._id_fetcher = PubMedAbstractIdFetcher(api_key)
+        self._id_fetcher = PubMedAbstractIdFetcher(api_key, subsample)
 
     def __call__(self):
         """Main download process."""
@@ -195,7 +196,7 @@ class DownloadClient:
         # Collect all data first
         data = []
         for file_id, text in zip(file_ids, file_text):
-            label = 1 if file_id in true_positive_ids else 0
+            label = 1 if int(file_id) in true_positive_ids else 0
             data.append({
                 "abstract_id": file_id,
                 "abstract_text": text,
@@ -241,6 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--temp_download_path", type=str, required=True, help="Path to save the temporary downloaded data")
     parser.add_argument("--num_threads", type=int, required=True, help="Number of threads to use for downloading")
     parser.add_argument("--api_key", type=str, required=True, help="API key for PubMed")
+    parser.add_argument("--subsample", type=bool, required=False, help="If true, subsample the negative data")
     args = parser.parse_args()
 
     download_client = DownloadClient(
@@ -248,6 +250,7 @@ if __name__ == "__main__":
         data_path=args.data_path,
         temp_download_path=args.temp_download_path,
         num_threads=args.num_threads,
-        api_key=args.api_key
+        api_key=args.api_key,
+        subsample=args.subsample if args.subsample is not None else False
     )
     download_client()
