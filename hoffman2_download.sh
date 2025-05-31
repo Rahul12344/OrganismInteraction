@@ -1,12 +1,13 @@
 #!/bin/bash
 #$ -cwd
+#$ -V
+#$ -pe shared 2
 # error = Merged with joblog
 #$ -o joblog.$JOB_ID
 #$ -j y
-#$ -pe shared 2
 #$ -l h_rt=8:00:00,h_data=4G
 # Email address to notify
-#$ -M $USER@mail
+#$ -M $USER_EMAIL
 # Notify when
 #$ -m bea
 
@@ -15,12 +16,6 @@
 module use /u/project/CCN/apps/modulefiles
 
 # Load the FSL module
-module load fsl
-
-# This is optional
-# More info here: https://www.ccn.ucla.edu/wiki/index.php/Hoffman2:FSL
-export NO_FSL_JOBS=true
-
 # Your script content goes here...
 
 module load anaconda3
