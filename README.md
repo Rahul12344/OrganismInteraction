@@ -27,17 +27,6 @@ python datadownloads/download_client.py
 \ --api_key=$PUBMED_API_KEY
 ```
 
-To create a 60:20:20 split for training,
-```
-python datadownloads/data_sampler.py
-\ --input_path=$DATASET_PATH
-\ --output_path=$OUTPUT_PATH
-\ --train_ratio=0.6
-\ --dev_ratio=0.2
-\ --test_ratio=0.2
-\ --pos_neg_ratio=1.0
-```
-
 ### "Recapture" evaluation set download
 To get the unlabeled dataset for the model,
 ```
@@ -62,7 +51,7 @@ python datadownloads/download_client.py
 
 ### Creating data split
 
-To create a 60:20:20 split for training,
+To create a split for training,
 ```
 python datadownloads/dataset_splitter.py
 \ --input_path=$INPUT # path to downloaded dataset
@@ -74,14 +63,15 @@ python datadownloads/dataset_splitter.py
 \ --seed=$SEED
 ```
 
+If none of the ratios are specified, a 60:20:20 split will be created.
+
 ## Training
 To train the model,
 ```
 python organismtraining/interaction_detection_evaluator.py
 \ --dataset_path=$DATASET
 \ --model_path=$MODEL
-\ --retrain=True
-\ --output_path=$OUTPUT
+\ --retrain
 ```
 
 ## Evaluation
@@ -90,5 +80,4 @@ To evaluate the model on some dataset,
 python organismtraining/interaction_detection_evaluator.py
 \ --dataset_path=$EVALUATION_DATASET
 \ --model_path=$MODEL
-\ --retrain=False
 ```
