@@ -35,7 +35,7 @@ python datadownloads/data_sampler.py
 \ --train_ratio=0.6
 \ --dev_ratio=0.2
 \ --test_ratio=0.2
-\ --pos_neg_ratio
+\ --pos_neg_ratio=1.0
 ```
 
 ### "Recapture" evaluation set download
