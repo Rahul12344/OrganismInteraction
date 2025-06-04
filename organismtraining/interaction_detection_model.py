@@ -84,9 +84,9 @@ class PubmedProteinInteractionTrainer:
             self._pretrained_model = self._load_model_from_checkpoint(model_path)
             self._trainer = self._build_trainer(dataset_path)
         else:
-            self._load_model_from_latest_checkpoint()
+            self._load_model_from_latest_checkpoint(model_path)
 
-    def train(self):
+    def train(self, model_path):
         """Trains model using train/eval data"""
         logger.info("Starting training...")
         self._trainer.train()
@@ -115,7 +115,7 @@ class PubmedProteinInteractionTrainer:
 
         return predicted_labels, true_labels
 
-    def _load_model_from_latest_checkpoint(self):
+    def _load_model_from_latest_checkpoint(self, model_path: str):
         """Loads model from latest checkpoint"""
         if not os.path.exists(os.path.join(model_path, _FINETUNED_MODEL_DIR)):
             raise FileNotFoundError("Latest checkpoint not found")

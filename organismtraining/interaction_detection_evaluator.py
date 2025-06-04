@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     if args.retrain:
         pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path)
-        pubmed_trainer.train()
+        pubmed_trainer.train(args.model_path)
     else:
         pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path, load_model=True)
 
