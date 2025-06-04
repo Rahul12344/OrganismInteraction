@@ -82,7 +82,7 @@ class PubmedProteinInteractionTrainer:
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         if not load_model:
             self._pretrained_model = self._load_model_from_checkpoint(model_path)
-            self._trainer = self._build_trainer()
+            self._trainer = self._build_trainer(dataset_path)
         else:
             self._load_model_from_latest_checkpoint()
 
@@ -127,7 +127,7 @@ class PubmedProteinInteractionTrainer:
             os.path.join(model_path, _FINETUNED_MODEL_DIR),
         )
 
-    def _build_trainer(self) -> Trainer:
+    def _build_trainer(self, dataset_path: str) -> Trainer:
         # Calculate number of training steps based on dataset size
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
         num_training_steps = len(self._tokenized_dataset["train"]) * 10  # epochs * dataset size
