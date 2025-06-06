@@ -125,6 +125,17 @@ class PubMedAbstractIdFetcher:
                 date=date,
                 **kwargs
             )
+        elif dataset == 'negative':
+            return self._get_abstract_ids_for_negative_set(
+                dataset=dataset,
+                ands=ands,
+                nots=nots,
+                start=start,
+                return_limit=return_limit,
+                id_return_limit=id_return_limit,
+                date=date,
+                **kwargs
+            )
 
 
     def _get_abstract_ids_for_standard_set(
@@ -165,7 +176,6 @@ class PubMedAbstractIdFetcher:
                     formatted_id = unformatted_id.text
                     try:
                         if int(formatted_id) >= smallest_id and int(formatted_id) <= largest_id:
-                            #print(formatted_id)
                             abstract_ids.append(formatted_id)
                     except _:
                         logger.error(f"Invalid ID: {formatted_id}")
@@ -223,25 +233,31 @@ class PubMedAbstractIdFetcher:
         **kwargs
     ) -> list[str]:
         abstract_id_range = kwargs.get('abstract_id_range', [])
-        if not isinstance(hgnc_symbols, list) or not all(isinstance(symbol, int) for symbol in hgnc_symbols):
-            raise ValueError("abstract_id_range must be a list of strings")
+        if not isinstance(abstract_id_range, list) or not all(isinstance(abstract_id, int) for abstract_id in abstract_id_range):
+            raise ValueError("abstract_id_range must be a list of ints")
         if not abstract_id_range or len(abstract_id_range) != 2 or abstract_id_range[0] >= abstract_id_range[1]:
             raise ValueError("abstract_id_range is required, please provide a lower and upper bound of the range")
 
+        positive_ids = sorted(list(kwargs.get('abstract_ids', [])))
+        if not isinstance(positive_ids, list) or not all(isinstance(abstract_id, int) for abstract_id in positive_ids):
+            raise ValueError("abstract_ids must be a list of str")
+        if not positive_ids:
+            raise ValueError("abstract_ids is required, please provide a list of positive IDs")
         abstract_ids, id_count = [], 0
         smallest_id = abstract_id_range[0]
         largest_id = abstract_id_range[1]
 
         params = self._create_params(
-            start=start_index,
+            ands=f'{largest_id+1}:{largest_id+return_limit}[uid]',
         )
+        start_index = largest_id + return_limit + 1
         r = requests.get(_IDLIST_PREFIX, params=params)
         root = ET.fromstring(r.content)
-        while root.find('RetMax') and root.find('RetMax').text != "0":
+        while root.find('RetMax') is not None and root.find('RetMax').text != "0":
             for ids in root.findall('IdList'):
                 for unformatted_id in ids.findall('Id'):
                     formatted_id = unformatted_id.text
-                    if int(formatted_id) > largest_id:
+                    if int(formatted_id) > largest_id and int(formatted_id) not in positive_ids:
                         abstract_ids.append(formatted_id)
                         id_count += 1
                         if id_count >= id_return_limit:
@@ -249,7 +265,7 @@ class PubMedAbstractIdFetcher:
 
             start_index += id_return_limit
             params = self._create_params(
-                start=start_index,
+                ands=f'{start_index}:{start_index+id_return_limit}[uid]',
             )
             r = requests.get(_IDLIST_PREFIX, params=params)
             root = ET.fromstring(r.content)
@@ -262,7 +278,7 @@ class PubMedAbstractIdFetcher:
         ands:str='',
         nots:str='',
         start:int=0,
-        return_limit:int=50000,
+        return_limit:int=10000,
         date:str=None
     ) -> str:
         if date is not None:

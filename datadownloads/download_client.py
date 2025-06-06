@@ -163,6 +163,7 @@ class DownloadClient:
                 _HGNC_SYMBOL_PARAM: hgnc_symbols,
             }
         elif dataset == "negative":
+            true_positive_ids = get_true_positive_ids("dataset/VIP_ids.txt")
             return {
                 _ABSTRACT_IDS_PARAM: true_positive_ids,
                 _ABSTRACT_ID_RANGE_PARAM: [min(true_positive_ids), max(true_positive_ids)]

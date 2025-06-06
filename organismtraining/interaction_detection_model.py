@@ -82,22 +82,24 @@ class PubmedProteinInteractionTrainer:
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         if not load_model:
             self._pretrained_model = self._load_model_from_checkpoint(model_path)
-            self._trainer = self._build_trainer()
+            self._trainer = self._build_trainer(dataset_path)
         else:
-            self._load_model_from_latest_checkpoint()
+            self._load_model_from_latest_checkpoint(model_path)
 
-    def train(self):
+    def train(self, model_path):
         """Trains model using train/eval data"""
         logger.info("Starting training...")
         self._trainer.train()
         self._trainer.save_model(os.path.join(model_path, _FINETUNED_MODEL_DIR))
+        self._tokenizer.save_pretrained(os.path.join(model_path, _FINETUNED_MODEL_DIR))
+        self.eval_test()
         logger.info("Training completed")
 
 
     def predict(self, dataset_path: str) -> list:
         """Predicts labels for a given dataset"""
         tokenized_prediction_set = self._build_tokenized_prediction_set(dataset_path)
-        predictions = self._pretrained_model(tokenized_prediction_set["prediction"])
+        predictions = self._trainer.predict(tokenized_prediction_set["prediction"])
         return [_sigmoid(prediction[1]) for prediction in predictions.predictions]
 
     def eval_test(self) -> tuple:
@@ -115,7 +117,7 @@ class PubmedProteinInteractionTrainer:
 
         return predicted_labels, true_labels
 
-    def _load_model_from_latest_checkpoint(self):
+    def _load_model_from_latest_checkpoint(self, model_path: str):
         """Loads model from latest checkpoint"""
         if not os.path.exists(os.path.join(model_path, _FINETUNED_MODEL_DIR)):
             raise FileNotFoundError("Latest checkpoint not found")
@@ -123,21 +125,23 @@ class PubmedProteinInteractionTrainer:
             os.path.join(model_path, _FINETUNED_MODEL_DIR),
             num_labels=2
         )
+        self._trainer = Trainer(model=self._pretrained_model)
         self._tokenizer = BertTokenizer.from_pretrained(
             os.path.join(model_path, _FINETUNED_MODEL_DIR),
         )
 
-    def _build_trainer(self) -> Trainer:
+    def _build_trainer(self, dataset_path: str) -> Trainer:
         # Calculate number of training steps based on dataset size
+        epochs = 10
         self._tokenized_dataset = self._build_tokenized_dataset(dataset_path)
-        num_training_steps = len(self._tokenized_dataset["train"]) * 10  # epochs * dataset size
+        num_training_steps = len(self._tokenized_dataset["train"]) * epochs  # epochs * dataset size
 
         training_args = TrainingArguments(
             output_dir="test_trainer",
             evaluation_strategy="epoch",
             per_device_train_batch_size=16,
             per_device_eval_batch_size=16,
-            num_train_epochs=10,
+            num_train_epochs=epochs,
             learning_rate=2e-5,
             logging_steps=100,
             save_strategy="epoch",
@@ -227,6 +231,7 @@ class PubmedProteinInteractionTrainer:
         })
 
     def _to_prediction_set(self, data: pd.DataFrame) -> Dataset:
+        data['text'] = data['text'].astype(str)
         return Dataset.from_dict({
-            'text': data['text'].tolist()
+            'text': data['text'].tolist()[0:],
         })
