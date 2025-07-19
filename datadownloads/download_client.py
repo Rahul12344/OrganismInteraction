@@ -25,7 +25,7 @@ except ImportError:
     import Queue as queue
 
 from datadownloads.pubmed_query import PubMedAbstractIdFetcher, PubMedDownloader
-from utils.data_utils import get_true_positive_ids, get_enriched_ensembl_ids, get_hgnc_symbol_from_ensembl_id_or_none
+from utils.data_utils import get_true_positive_ids, get_enriched_ensembl_ids, get_hgnc_symbol_from_ensembl_id_or_none, get_scored_positive_ids
 
 
 logging.basicConfig(
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 _ABSTRACT_ID_RANGE_PARAM = "abstract_id_range"
 _HGNC_SYMBOL_PARAM = "hgnc_symbols"
 _ABSTRACT_IDS_PARAM = "abstract_ids"
+_SCORED_POSITIVE_IDS_PARAM = "scored_positive_ids"
 
 class DownloadWorker(Thread):
     def __init__(
@@ -109,10 +110,13 @@ class DownloadClient:
         """Main download process."""
         # Query PubMed
         custom_params = self._get_custom_params(self._dataset)
-        abstract_XML_ids = self._id_fetcher(
-            dataset=self._dataset,
-            **custom_params
-        )
+        if self._dataset == 'scored_positives':
+            abstract_XML_ids = custom_params.get(_SCORED_POSITIVE_IDS_PARAM)
+        else:
+            abstract_XML_ids = self._id_fetcher(
+                dataset=self._dataset,
+                **custom_params
+            )
 
         # Download abstracts
         self._download_abstracts(abstract_XML_ids, custom_params)
@@ -168,6 +172,11 @@ class DownloadClient:
                 _ABSTRACT_IDS_PARAM: true_positive_ids,
                 _ABSTRACT_ID_RANGE_PARAM: [min(true_positive_ids), max(true_positive_ids)]
             }
+        elif dataset == 'scored_positives':
+            scored_positives = get_scored_positive_ids("dataset/positive_scored_ids.csv")
+            return {
+                _SCORED_POSITIVE_IDS_PARAM: scored_positives
+            }
         else:
             raise ValueError(f"Unsupported dataset type: {dataset}")
 
@@ -188,8 +197,10 @@ class DownloadClient:
             self._process_recapture_virus_dataset(file_text, file_ids)
         elif self._dataset == "negative":
             self._process_negative_virus_dataset(file_text, file_ids)
+        elif self._dataset == "scored_positives":
+            self._process_scored_positive_virus_dataset(file_text, file_ids)
         else:
-            raise ValueError(f"Unsupported dataset type: {dataset}")
+            raise ValueError(f"Unsupported dataset type: {self._dataset}")
 
 
     def _process_standard_dataset(self, file_text: list[str], file_ids: list[str], true_positive_ids: set[str]):
@@ -199,8 +210,8 @@ class DownloadClient:
         for file_id, text in zip(file_ids, file_text):
             label = 1 if int(file_id) in true_positive_ids else 0
             data.append({
-                "abstract_id": file_id,
-                "abstract_text": text,
+                "abstract": file_id,
+                "text": text,
                 "label": label
             })
 
@@ -214,8 +225,8 @@ class DownloadClient:
         data = []
         for file_id, text in zip(file_ids, file_text):
             data.append({
-                "abstract_id": file_id,
-                "abstract_text": text
+                "abstract": file_id,
+                "text": text
             })
 
         # Create DataFrame in one go
@@ -228,13 +239,27 @@ class DownloadClient:
         data = []
         for file_id, text in zip(file_ids, file_text):
             data.append({
+                "abstract": file_id,
+                "text": text
+            })
+
+        # Create DataFrame in one go
+        df = pd.DataFrame(data)
+        df.to_csv(os.path.join(self._data_path, "negative_virus_dataset.tsv"), index=False, sep="\t")
+
+    def _process_scored_positive_virus_dataset(self, file_text: list[str], file_ids: list[str]):
+        """Process negative virus dataset."""
+        # Collect all data first
+        data = []
+        for file_id, text in zip(file_ids, file_text):
+            data.append({
                 "abstract_id": file_id,
                 "abstract_text": text
             })
 
         # Create DataFrame in one go
         df = pd.DataFrame(data)
-        df.to_csv(os.path.join(self._data_path, "negative_virus_dataset.tsv"), index=False, sep="\t")
+        df.to_csv(os.path.join(self._data_path, "scored_positive_virus_dataset.tsv"), index=False, sep="\t")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
