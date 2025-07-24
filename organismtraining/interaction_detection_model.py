@@ -100,6 +100,13 @@ class PubmedProteinInteractionTrainer:
         """Predicts labels for a given dataset"""
         tokenized_prediction_set = self._build_tokenized_prediction_set(dataset_path)
         predictions = self._trainer.predict(tokenized_prediction_set["prediction"])
+        df = pd.read_csv(dataset_path, sep='\t')
+        ids = df['abstract'].tolist()
+        prediction_df = pd.DataFrame({
+            'abstract': ids,
+            'predicted_label': [_sigmoid(prediction[1]) for prediction in predictions.predictions]
+        })
+        prediction_df.to_csv(f"dataset/{os.path.splitext(os.path.basename(dataset_path))[0]}_predictions.tsv", sep='\t', index=False)
         return [_sigmoid(prediction[1]) for prediction in predictions.predictions]
 
     def eval_test(self) -> tuple:

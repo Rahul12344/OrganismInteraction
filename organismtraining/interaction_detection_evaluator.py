@@ -1,6 +1,6 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.metrics import roc_curve, roc_auc_score, precision_recall_curve, auc
 from organismtraining.interaction_detection_model import PubmedProteinInteractionTrainer
 import argparse
 
@@ -10,7 +10,7 @@ class PubmedProteinInteractionEvaluator:
         fpr, tpr, _ = roc_curve(true_labels, predicted_labels)
         roc_auc = roc_auc_score(true_labels, predicted_labels)
 
-        sns.set(style='whitegrid')
+        sns.set_style('whitegrid', {'axes.grid' : False})
         plt.figure(figsize=(8, 6))
         plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
         plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
@@ -18,9 +18,21 @@ class PubmedProteinInteractionEvaluator:
         plt.ylim([0.0, 1.05])
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('Receiver Operating Characteristic')
         plt.legend(loc='lower right')
         plt.savefig('roc_curve.png')
+
+        precision, recall, thresholds = precision_recall_curve(true_labels, predicted_labels)
+        auprc = auc(recall, precision)
+        sns.set_style('whitegrid', {'axes.grid' : False})
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'PRC curve (AUC = {auprc:.2f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.legend(loc='lower right')
+        plt.savefig('prc_curve.png')
 
     def chart(self, predicted_labels: list):
         sns.set(style='whitegrid')
@@ -28,7 +40,6 @@ class PubmedProteinInteractionEvaluator:
         plt.hist(predicted_labels, edgecolor='black')
         plt.xlabel('Predicted Labels')
         plt.ylabel('Frequency')
-        plt.title('Predicted Labels Histogram')
         plt.savefig('predicted_labels_histogram.png')
 
 if __name__ == "__main__":
