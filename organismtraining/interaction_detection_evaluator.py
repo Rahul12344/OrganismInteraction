@@ -25,7 +25,7 @@ class PubmedProteinInteractionEvaluator:
         auprc = auc(recall, precision)
         sns.set_style('whitegrid', {'axes.grid' : False})
         plt.figure(figsize=(8, 6))
-        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'PRC curve (AUC = {auprc:.2f})')
+        plt.plot(recall, precision, color='darkorange', lw=2, label=f'PRC curve (AUC = {auprc:.2f})')
         plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
         plt.xlim([0.0, 1.0])
         plt.ylim([0.0, 1.05])
