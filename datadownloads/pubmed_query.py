@@ -97,7 +97,7 @@ class PubMedAbstractIdFetcher:
         nots:list[str]=[],
         start:int=0,
         return_limit:int=10000,
-        id_return_limit:int=100000,
+        id_return_limit:int=50000,
         date:str=None,
         **kwargs
     ):
@@ -105,48 +105,24 @@ class PubMedAbstractIdFetcher:
             raise ValueError("dataset must be one of 'standard', 'recapture', or 'negative'")
         if dataset == 'standard':
             return self._get_abstract_ids_for_standard_set(
-                dataset=dataset,
-                ands=ands,
-                nots=nots,
-                start=start,
                 return_limit=return_limit,
-                id_return_limit=id_return_limit,
-                date=date,
                 **kwargs
             )
         elif dataset == 'recapture':
             return self._get_abstract_ids_for_recapture_set(
-                dataset=dataset,
                 ands=ands,
-                nots=nots,
-                start=start,
-                return_limit=return_limit,
-                id_return_limit=id_return_limit,
-                date=date,
                 **kwargs
             )
         elif dataset == 'negative':
             return self._get_abstract_ids_for_negative_set(
-                dataset=dataset,
-                ands=ands,
-                nots=nots,
-                start=start,
                 return_limit=return_limit,
                 id_return_limit=id_return_limit,
-                date=date,
                 **kwargs
             )
 
-
     def _get_abstract_ids_for_standard_set(
         self,
-        dataset: str,
-        ands:list[str]=[],
-        nots:list[str]=[],
-        start:int=0,
         return_limit:int=10000,
-        id_return_limit:int=100000,
-        date:str=None,
         **kwargs
     ) -> list[str]:
         abstract_id_range = kwargs.get('abstract_id_range', [])
@@ -191,13 +167,7 @@ class PubMedAbstractIdFetcher:
 
     def _get_abstract_ids_for_recapture_set(
         self,
-        dataset: str,
         ands:list[str]=[],
-        nots:list[str]=[],
-        start:int=0,
-        return_limit:int=10000,
-        id_return_limit:int=100000,
-        date:str=None,
         **kwargs
     ) -> list[str]:
         hgnc_symbols = kwargs.get('hgnc_symbols', [])
@@ -223,13 +193,8 @@ class PubMedAbstractIdFetcher:
 
     def _get_abstract_ids_for_negative_set(
         self,
-        dataset: str,
-        ands:list[str]=[],
-        nots:list[str]=[],
-        start:int=0,
         return_limit:int=10000,
-        id_return_limit:int=100000,
-        date:str=None,
+        id_return_limit:int=50000,
         **kwargs
     ) -> list[str]:
         abstract_id_range = kwargs.get('abstract_id_range', [])
@@ -244,7 +209,6 @@ class PubMedAbstractIdFetcher:
         if not positive_ids:
             raise ValueError("abstract_ids is required, please provide a list of positive IDs")
         abstract_ids, id_count = [], 0
-        smallest_id = abstract_id_range[0]
         largest_id = abstract_id_range[1]
 
         params = self._create_params(

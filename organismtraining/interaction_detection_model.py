@@ -14,7 +14,7 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_METRIC = evaluate.load("f1")
+_METRIC = evaluate.load("omidf/squad_precision_recall")
 _PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
 _FINETUNED_MODEL_DIR = "bluebert_finetuned_model"
 _MAX_LENGTH = 512
@@ -153,7 +153,7 @@ class PubmedProteinInteractionTrainer:
             logging_steps=100,
             save_strategy="epoch",
             load_best_model_at_end=True,
-            metric_for_best_model="f1"
+            metric_for_best_model="omidf/squad_precision_recall"
         )
 
         optimizer = Adam(

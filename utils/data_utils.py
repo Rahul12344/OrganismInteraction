@@ -6,6 +6,11 @@ _HGNC_SYMBOL_COLUMN = "HGNC symbol"
 
 _INVALID_PUBMED_IDS = {"interactions information", "retracted"}
 
+def get_scored_positive_ids(dataset_path: str) -> str:
+    df = pd.read_csv(dataset_path)
+
+    return set(df['Abstract'].to_list())
+
 def get_true_positive_ids(dataset_path: str) -> set:
     """
     Get the true positive IDs from the dataset.
