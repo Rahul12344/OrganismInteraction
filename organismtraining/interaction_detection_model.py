@@ -14,7 +14,7 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_METRIC = evaluate.load("omidf/squad_precision_recall")
+_METRIC = evaluate.load("yonting/average_precision_score")
 _PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
 _FINETUNED_MODEL_DIR = "bluebert_finetuned_model"
 _MAX_LENGTH = 512
@@ -23,17 +23,21 @@ _SEED = 42
 def _tokenize_function(samples: pd.DataFrame, tokenizer: BertTokenizer):
     return tokenizer(samples["text"], padding="max_length", truncation=True, max_length=_MAX_LENGTH)
 
+def _round(x, threshold=0.9):
+    return 1 if x >= threshold else 0
+
 def _compute_metrics(eval_pred):
     logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-    metrics = _METRIC.compute(predictions=predictions, references=labels)
+    predictions = _sigmoid(logits[:, 1])
+    print(predictions)
+    metrics = _METRIC.compute(prediction_scores=[_round(x) for x in _sigmoid(logits[:, 1])], predictions=[_round(x) for x in _sigmoid(logits[:, 1])], references=labels)
 
     # Add additional metrics
     from sklearn.metrics import roc_auc_score, precision_score, recall_score
     probs = _sigmoid(logits[:, 1])  # Get probabilities for positive class
     metrics["auc"] = roc_auc_score(labels, probs)
-    metrics["precision"] = precision_score(labels, predictions)
-    metrics["recall"] = recall_score(labels, predictions)
+    metrics["precision"] = precision_score(labels, [_round(x) for x in _sigmoid(logits[:, 1])])
+    metrics["recall"] = recall_score(labels, [_round(x) for x in _sigmoid(logits[:, 1])])
 
     logger.info(f"Evaluation metrics: {metrics}")
     return metrics
@@ -41,43 +45,8 @@ def _compute_metrics(eval_pred):
 def _sigmoid(x):
     return 1/(1 + np.exp(-x))
 
-class CustomBertForSequenceClassification(BertForSequenceClassification):
-    def __init__(self, config):
-        super().__init__(config)
-        # Add dropout after BERT
-        self.dropout = nn.Dropout(0.3)
-        # Add intermediate layer
-        self.intermediate = nn.Linear(config.hidden_size, 256)
-        self.activation = nn.ReLU()
-        # Add final classification layer
-        self.classifier = nn.Linear(256, config.num_labels)
-
-    def forward(self, input_ids=None, attention_mask=None, token_type_ids=None,
-                position_ids=None, head_mask=None, inputs_embeds=None, labels=None):
-        outputs = self.bert(input_ids,
-                          attention_mask=attention_mask,
-                          token_type_ids=token_type_ids,
-                          position_ids=position_ids,
-                          head_mask=head_mask,
-                          inputs_embeds=inputs_embeds)
-
-        pooled_output = outputs[1]
-        pooled_output = self.dropout(pooled_output)
-        intermediate_output = self.intermediate(pooled_output)
-        intermediate_output = self.activation(intermediate_output)
-        logits = self.classifier(intermediate_output)
-
-        outputs = (logits,) + outputs[2:]
-
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 2.0]).to(logits.device))  # Class weights
-            loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
-            outputs = (loss,) + outputs
-
-        return outputs
-
 class PubmedProteinInteractionTrainer:
-    def __init__(self, dataset_path: str, model_path: str, load_model: bool = False):
+    def __init__(self, dataset_path: str, model_path: str, load_model: bool = False, save_output_path: str | None = None):
         """Trainer class for detecting virus-protein interactions in Pubmed abstracts."""
         self._tokenizer = BertTokenizer.from_pretrained(os.path.join(model_path, _PRETRAIN_DIR))
         if not load_model:
@@ -85,6 +54,7 @@ class PubmedProteinInteractionTrainer:
             self._trainer = self._build_trainer(dataset_path)
         else:
             self._load_model_from_latest_checkpoint(model_path)
+        self._save_output_path = save_output_path
 
     def train(self, model_path):
         """Trains model using train/eval data"""
@@ -100,13 +70,17 @@ class PubmedProteinInteractionTrainer:
         """Predicts labels for a given dataset"""
         tokenized_prediction_set = self._build_tokenized_prediction_set(dataset_path)
         predictions = self._trainer.predict(tokenized_prediction_set["prediction"])
-        df = pd.read_csv(dataset_path, sep='\t')
-        ids = df['abstract'].tolist()
-        prediction_df = pd.DataFrame({
-            'abstract': ids,
-            'predicted_label': [_sigmoid(prediction[1]) for prediction in predictions.predictions]
-        })
-        prediction_df.to_csv(f"dataset/{os.path.splitext(os.path.basename(dataset_path))[0]}_predictions.tsv", sep='\t', index=False)
+
+        if self._save_output_path:
+            df = pd.DataFrame(
+                {
+                    'abstract': list(tokenized_prediction_set["prediction"]["id"]),
+                    'prediction': [_sigmoid(prediction[1]) for prediction in predictions.predictions]
+                }
+            )
+            file_name = os.path.splitext(os.path.basename(dataset_path))[0]
+            df.to_csv(os.path.join(self._save_output_path, f'{file_name}_predictions.csv'))
+
         return [_sigmoid(prediction[1]) for prediction in predictions.predictions]
 
     def eval_test(self) -> tuple:
@@ -121,6 +95,16 @@ class PubmedProteinInteractionTrainer:
         logger.info(f"Prediction range: [{min(predicted_labels):.4f}, {max(predicted_labels):.4f}]")
         logger.info(f"Mean prediction: {np.mean(predicted_labels):.4f}")
         logger.info(f"True labels distribution: {np.bincount(true_labels)}")
+
+        if self._save_output_path:
+            df = pd.DataFrame(
+                {
+                    'abstract': list(self._tokenized_dataset["test"]["id"]),
+                    'actual': list(true_labels)
+                    'prediction': predicted_labels
+                }
+            )
+            df.to_csv(os.path.join(self._save_output_path, 'test_predictions.csv'))
 
         return predicted_labels, true_labels
 
@@ -153,7 +137,7 @@ class PubmedProteinInteractionTrainer:
             logging_steps=100,
             save_strategy="epoch",
             load_best_model_at_end=True,
-            metric_for_best_model="omidf/squad_precision_recall"
+            metric_for_best_model="eval_average_precision_score"
         )
 
         optimizer = Adam(
@@ -240,5 +224,6 @@ class PubmedProteinInteractionTrainer:
     def _to_prediction_set(self, data: pd.DataFrame) -> Dataset:
         data['text'] = data['text'].astype(str)
         return Dataset.from_dict({
+            'id': data['abstract'].tolist()[0:],
             'text': data['text'].tolist()[0:],
         })
