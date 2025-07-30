@@ -23,4 +23,6 @@ data/
 dataset/
 temp/
 *.png
+*.pdf
+*.csv
 test_trainer/
