@@ -123,7 +123,7 @@ if __name__ == "__main__":
         else:
             evaluator.chart(df['predicted'].tolist())
     else:
-        save_output_path = arg.save_output_path if arg.save_output_path else None
+        save_output_path = args.save_output_path if args.save_output_path else None
 
         if args.retrain:
             pubmed_trainer = PubmedProteinInteractionTrainer(dataset_path=args.dataset_path, model_path=args.model_path, save_output_path=save_output_path)
