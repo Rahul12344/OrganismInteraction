@@ -74,10 +74,28 @@ python organismtraining/interaction_detection_evaluator.py
 \ --retrain
 ```
 
+To save the predictions from the model,
+```
+python organismtraining/interaction_detection_evaluator.py --dataset_path=$DATASET --model_path=$MODEL --retrain --save_output_path=$SAVE_OUTPUT_PATH
+```
+
 ## Evaluation
 To evaluate the model on some dataset,
 ```
 python organismtraining/interaction_detection_evaluator.py
 \ --dataset_path=$EVALUATION_DATASET
 \ --model_path=$MODEL
+\ --predict_set_path=$PREDICTION_DATASET_FILE
+```
+
+To save the predictions from the model,
+```
+python organismtraining/interaction_detection_evaluator.py --dataset_path=$EVALUATION_DATASET --model_path=$MODEL --save_output_path=$SAVE_OUTPUT_PATH --predict_set_path=$PREDICTION_DATASET_FILE
+```
+
+## Metrics on frozen CSV
+To chart/evaluate metrics on frozen predictions,
+```
+python organismtraining/interaction_detection_evaluator.py --dataset_path=$DATASET --model_path=$MODEL
+--from_prediction_csv=$PREDICTION_CSV
 ```

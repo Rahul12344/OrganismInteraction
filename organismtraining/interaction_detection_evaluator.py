@@ -117,7 +117,7 @@ if __name__ == "__main__":
                       help='Evaluate on prediction CSV')
     args = parser.parse_args()
     if args.from_prediction_csv:
-        df = pd.read_csv(from_prediction_csv)
+        df = pd.read_csv(args.from_prediction_csv)
         if 'actual' in df.columns:
             evaluator.evaluate(df['predicted'].tolist(), df['actual'].tolist())
         else:

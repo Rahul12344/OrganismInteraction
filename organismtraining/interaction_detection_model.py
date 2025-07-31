@@ -100,7 +100,7 @@ class PubmedProteinInteractionTrainer:
             df = pd.DataFrame(
                 {
                     'abstract': list(self._tokenized_dataset["test"]["id"]),
-                    'actual': list(true_labels)
+                    'actual': list(true_labels),
                     'prediction': predicted_labels
                 }
             )
