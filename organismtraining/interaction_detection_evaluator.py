@@ -119,9 +119,9 @@ if __name__ == "__main__":
     if args.from_prediction_csv:
         df = pd.read_csv(args.from_prediction_csv)
         if 'actual' in df.columns:
-            evaluator.evaluate(df['predicted'].tolist(), df['actual'].tolist())
+            evaluator.evaluate(df['prediction'].tolist(), df['actual'].tolist())
         else:
-            evaluator.chart(df['predicted'].tolist())
+            evaluator.chart(df['prediction'].tolist())
     else:
         save_output_path = args.save_output_path if args.save_output_path else None
 
