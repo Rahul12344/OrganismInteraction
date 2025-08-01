@@ -129,7 +129,7 @@ class PubmedProteinInteractionTrainer:
 
         training_args = TrainingArguments(
             output_dir="test_trainer",
-            evaluation_strategy="epoch",
+            eval_strategy="epoch",
             per_device_train_batch_size=16,
             per_device_eval_batch_size=16,
             num_train_epochs=epochs,
