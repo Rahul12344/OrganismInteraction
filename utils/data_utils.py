@@ -40,6 +40,16 @@ def get_enriched_ensembl_ids(dataset_path: str) -> set:
     ensembl_ids = [line.rstrip('\n') for line in lines]
     return set(ensembl_ids)
 
+def get_true_positive_ensembl_ids(dataset_path: str) -> set:
+    """
+    Get the enriched Ensembl IDs from the dataset.
+    """
+    with open(dataset_path, "r") as f:
+        lines = f.readlines()
+
+    ensembl_ids = [line.split('\t')[0] for line in lines[1:]]
+    return set(ensembl_ids)
+
 
 def get_hgnc_symbol_from_ensembl_id_or_none(ensembl_id: str, hgnc_symbol_map_df: pd.DataFrame) -> str | None:
     """

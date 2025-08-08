@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import pandas as pd
 from transformers import BertTokenizer, BertForSequenceClassification
@@ -10,6 +11,7 @@ from transformers import TrainingArguments, Trainer, get_linear_schedule_with_wa
 from torch.optim import Adam
 from torch import nn
 import torch
+from utils.data_utils import get_true_positive_ensembl_ids, get_enriched_ensembl_ids, get_hgnc_symbol_from_ensembl_id_or_none
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +21,13 @@ _PRETRAIN_DIR = "bluebert_pretrained_model"  # Default to base BERT model
 _FINETUNED_MODEL_DIR = "bluebert_finetuned_model"
 _MAX_LENGTH = 512
 _SEED = 42
+
+mart_export_df = pd.read_csv("dataset/mart_export.tsv", sep="\t")
+hgnc_symbols_enriched = [get_hgnc_symbol_from_ensembl_id_or_none(ensembl_id, mart_export_df) for ensembl_id in get_enriched_ensembl_ids("dataset/mass-spec_VIPs.txt")]
+hgnc_symbols_true_positive = [get_hgnc_symbol_from_ensembl_id_or_none(ensembl_id, mart_export_df) for ensembl_id in get_true_positive_ensembl_ids("dataset/mass-spec_VIPs.txt")]
+vip_hgnc_symbols = set([hgnc for hgnc in hgnc_symbols_enriched if hgnc is not None and isinstance(hgnc, str)] + [hgnc for hgnc in hgnc_symbols_true_positive if hgnc is not None and isinstance(hgnc, str)])
+print(vip_hgnc_symbols)
+
 
 def _tokenize_function(samples: pd.DataFrame, tokenizer: BertTokenizer):
     return tokenizer(samples["text"], padding="max_length", truncation=True, max_length=_MAX_LENGTH)
@@ -223,7 +232,9 @@ class PubmedProteinInteractionTrainer:
 
     def _to_prediction_set(self, data: pd.DataFrame) -> Dataset:
         data['text'] = data['text'].astype(str)
+        pattern = '|'.join(re.escape(phrase) for phrase in vip_hgnc_symbols)
+        filtered_data = data[~data['text'].str.contains(pattern, case=False, na=False)]
         return Dataset.from_dict({
-            'id': data['abstract'].tolist()[0:],
-            'text': data['text'].tolist()[0:],
+            'id': filtered_data['abstract'].tolist()[0:],
+            'text': filtered_data['text'].tolist()[0:],
         })
